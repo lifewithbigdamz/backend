@@ -1,6 +1,6 @@
-import { models } from '../../models';
+const models = require('../../models');
 
-export const proofResolver = {
+const proofResolver = {
   Query: {
     // Health check
     health: () => {
@@ -8,7 +8,7 @@ export const proofResolver = {
     },
 
     // Claims related queries (already in userResolver, but keeping for completeness)
-    auditLogs: async (_: any, { limit = 100 }: { limit?: number }) => {
+    auditLogs: async (_, { limit = 100 }) => {
       try {
         // In a real implementation, you would have an AuditLog model
         // For now, returning a placeholder
@@ -19,7 +19,7 @@ export const proofResolver = {
       }
     },
 
-    pendingTransfers: async (_: any, { contractAddress }: { contractAddress?: string }) => {
+    pendingTransfers: async (_, { contractAddress }) => {
       try {
         // In a real implementation, you would query pending admin transfers
         // For now, returning a placeholder
@@ -33,7 +33,7 @@ export const proofResolver = {
 
   Mutation: {
     // Admin mutations
-    revokeAccess: async (_: any, { input }: { input: any }) => {
+    revokeAccess: async (_, { input }) => {
       try {
         // In a real implementation, you would:
         // 1. Verify admin permissions
@@ -57,7 +57,7 @@ export const proofResolver = {
       }
     },
 
-    transferVault: async (_: any, { input }: { input: any }) => {
+    transferVault: async (_, { input }) => {
       try {
         // In a real implementation, you would:
         // 1. Verify admin permissions
@@ -95,7 +95,7 @@ export const proofResolver = {
     },
 
     // Admin key management
-    proposeNewAdmin: async (_: any, { input }: { input: any }) => {
+    proposeNewAdmin: async (_, { input }) => {
       try {
         // In a real implementation, you would:
         // 1. Create a pending transfer record
@@ -119,7 +119,7 @@ export const proofResolver = {
       }
     },
 
-    acceptOwnership: async (_: any, { input }: { input: any }) => {
+    acceptOwnership: async (_, { input }) => {
       try {
         // In a real implementation, you would:
         // 1. Verify the transfer exists and is pending
@@ -143,7 +143,7 @@ export const proofResolver = {
       }
     },
 
-    transferOwnership: async (_: any, { input }: { input: any }) => {
+    transferOwnership: async (_, { input }) => {
       try {
         // In a real implementation, you would:
         // 1. Verify current admin permissions
@@ -168,3 +168,5 @@ export const proofResolver = {
     }
   }
 };
+
+module.exports = { proofResolver };

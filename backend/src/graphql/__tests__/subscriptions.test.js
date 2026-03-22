@@ -1,4 +1,4 @@
-import { 
+const { 
   subscriptionResolver, 
   publishVaultUpdate, 
   publishBeneficiaryUpdate, 
@@ -8,11 +8,11 @@ import {
   publishAdminTransferUpdated,
   SUBSCRIPTION_EVENTS,
   pubsub
-} from '../subscriptions/proofSubscription';
-import { models } from '../../../models';
+} = require('../subscriptions/proofSubscription');
+const { models } = require('../../models');
 
 // Mock models
-jest.mock('../../../models', () => ({
+jest.mock('../../models', () => ({
   models: {
     Vault: {
       findOne: jest.fn(),
@@ -46,7 +46,7 @@ describe('GraphQL Subscriptions', () => {
     describe('vaultUpdated', () => {
       it('should subscribe to vault updates for specific vault', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.vaultUpdated.subscribe(
           null, 
@@ -60,7 +60,7 @@ describe('GraphQL Subscriptions', () => {
 
       it('should subscribe to all vault updates when no address provided', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.vaultUpdated.subscribe(null, {});
 
@@ -73,7 +73,7 @@ describe('GraphQL Subscriptions', () => {
     describe('beneficiaryUpdated', () => {
       it('should subscribe to beneficiary updates for specific beneficiary', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.beneficiaryUpdated.subscribe(
           null, 
@@ -90,7 +90,7 @@ describe('GraphQL Subscriptions', () => {
 
       it('should subscribe to vault-specific beneficiary updates', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.beneficiaryUpdated.subscribe(
           null, 
@@ -106,7 +106,7 @@ describe('GraphQL Subscriptions', () => {
     describe('newClaim', () => {
       it('should subscribe to claims for specific user', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.newClaim.subscribe(
           null, 
@@ -122,7 +122,7 @@ describe('GraphQL Subscriptions', () => {
     describe('withdrawalProcessed', () => {
       it('should subscribe to withdrawal updates for specific beneficiary', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.withdrawalProcessed.subscribe(
           null, 
@@ -141,7 +141,7 @@ describe('GraphQL Subscriptions', () => {
     describe('auditLogCreated', () => {
       it('should subscribe to all audit logs', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.auditLogCreated.subscribe(null, {});
 
@@ -154,7 +154,7 @@ describe('GraphQL Subscriptions', () => {
     describe('adminTransferUpdated', () => {
       it('should subscribe to admin transfers for specific contract', () => {
         const mockAsyncIterator = jest.fn();
-        (pubsub.asyncIterator as jest.Mock).mockReturnValue(mockAsyncIterator);
+        pubsub.asyncIterator.mockReturnValue(mockAsyncIterator);
 
         subscriptionResolver.Subscription.adminTransferUpdated.subscribe(
           null, 
@@ -178,8 +178,8 @@ describe('GraphQL Subscriptions', () => {
           subSchedules: []
         };
 
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-        (pubsub.publish as jest.Mock).mockImplementation();
+      models.Vault.findOne.mockResolvedValue(mockVault);
+      pubsub.publish.mockImplementation();
 
         await publishVaultUpdate('0x123...', mockVault);
 
@@ -203,7 +203,7 @@ describe('GraphQL Subscriptions', () => {
       });
 
       it('should handle errors gracefully', async () => {
-        (models.Vault.findOne as jest.Mock).mockRejectedValue(new Error('Database error'));
+        models.Vault.findOne.mockRejectedValue(new Error('Database error'));
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
         await publishVaultUpdate('0x123...', {});
@@ -224,9 +224,9 @@ describe('GraphQL Subscriptions', () => {
           vault: mockVault
         };
 
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-        (models.Beneficiary.findOne as jest.Mock).mockResolvedValue(mockBeneficiary);
-        (pubsub.publish as jest.Mock).mockImplementation();
+      models.Vault.findOne.mockResolvedValue(mockVault);
+        models.Beneficiary.findOne.mockResolvedValue(mockBeneficiary);
+      pubsub.publish.mockImplementation();
 
         await publishBeneficiaryUpdate('0x123...', '0xbeneficiary...', mockBeneficiary);
 
@@ -256,8 +256,8 @@ describe('GraphQL Subscriptions', () => {
           amount_claimed: '100'
         };
 
-        (models.ClaimsHistory.findOne as jest.Mock).mockResolvedValue(mockClaim);
-        (pubsub.publish as jest.Mock).mockImplementation();
+        models.ClaimsHistory.findOne.mockResolvedValue(mockClaim);
+      pubsub.publish.mockImplementation();
 
         await publishNewClaim('0xuser...', { transactionHash: '0xtx...' });
 
@@ -281,7 +281,7 @@ describe('GraphQL Subscriptions', () => {
           remainingAmount: '150'
         };
 
-        (pubsub.publish as jest.Mock).mockImplementation();
+        pubsub.publish.mockImplementation();
 
         await publishWithdrawalProcessed('0x123...', '0xbeneficiary...', withdrawableInfo);
 
@@ -311,7 +311,7 @@ describe('GraphQL Subscriptions', () => {
           timestamp: new Date()
         };
 
-        (pubsub.publish as jest.Mock).mockImplementation();
+        pubsub.publish.mockImplementation();
 
         await publishAuditLogCreated(auditLog);
 
@@ -331,7 +331,7 @@ describe('GraphQL Subscriptions', () => {
           contractAddress: '0xcontract...'
         };
 
-        (pubsub.publish as jest.Mock).mockImplementation();
+        pubsub.publish.mockImplementation();
 
         await publishAdminTransferUpdated('0xcontract...', transferData);
 
@@ -361,7 +361,7 @@ describe('GraphQL Subscriptions', () => {
 
   describe('Error Handling', () => {
     it('should handle publish errors gracefully', async () => {
-      (pubsub.publish as jest.Mock).mockImplementation(() => {
+      pubsub.publish.mockImplementation(() => {
         throw new Error('Publish error');
       });
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -374,7 +374,7 @@ describe('GraphQL Subscriptions', () => {
     });
 
     it('should handle missing vault in publishVaultUpdate', async () => {
-      (models.Vault.findOne as jest.Mock).mockResolvedValue(null);
+      models.Vault.findOne.mockResolvedValue(null);
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       await publishVaultUpdate('0x123...', {});

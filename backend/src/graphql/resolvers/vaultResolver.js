@@ -2,11 +2,11 @@ const models = require('../../models');
 const cacheService = require('../../services/cacheService');
 const tvlService = require('../../services/tvlService');
 
-export const vaultResolver = {
+const vaultResolver = {
   Query: {
-    vault: async (_: any, { address, orgId, adminAddress }: { address: string, orgId?: string, adminAddress?: string }) => {
+    vault: async (_, { address, orgId, adminAddress }) => {
       try {
-        const whereClause: Record<string, unknown> = { address };
+        const whereClause = { address };
         if (orgId && adminAddress) {
           const { isAdminOfOrg } = require('../middleware/auth');
           const isAdmin = await isAdminOfOrg(adminAddress, orgId);
@@ -36,7 +36,7 @@ export const vaultResolver = {
       }
     },
 
-    vaults: async (_: any, { orgId, adminAddress, first = 50, after }: { orgId?: string, adminAddress?: string, first?: number, after?: string }) => {
+    vaults: async (_, { orgId, adminAddress, first = 50, after }) => {
       try {
         if (!orgId || !adminAddress) {
           throw new Error('orgId and adminAddress are required to list vaults.');
@@ -70,7 +70,7 @@ export const vaultResolver = {
       }
     },
 
-    vaultSummary: async (_: any, { vaultAddress }: { vaultAddress: string }) => {
+    vaultSummary: async (_, { vaultAddress }) => {
       try {
         const vault = await models.Vault.findOne({
           where: { address: vaultAddress },
@@ -90,12 +90,12 @@ export const vaultResolver = {
           throw new Error('Vault not found');
         }
 
-        const totalAllocated = vault.beneficiaries.reduce((sum: any, beneficiary: any) => 
+        const totalAllocated = vault.beneficiaries.reduce((sum, beneficiary) => 
           sum + parseFloat(beneficiary.total_allocated), 0);
-        const totalWithdrawn = vault.beneficiaries.reduce((sum: any, beneficiary: any) => 
+        const totalWithdrawn = vault.beneficiaries.reduce((sum, beneficiary) => 
           sum + parseFloat(beneficiary.total_withdrawn), 0);
         const remainingAmount = totalAllocated - totalWithdrawn;
-        const activeBeneficiaries = vault.beneficiaries.filter((beneficiary: any) => 
+        const activeBeneficiaries = vault.beneficiaries.filter((beneficiary) => 
           parseFloat(beneficiary.total_allocated) > parseFloat(beneficiary.total_withdrawn)).length;
 
         return {
@@ -113,7 +113,7 @@ export const vaultResolver = {
   },
 
   Mutation: {
-    createVault: async (_: any, { input }: { input: any }) => {
+    createVault: async (_, { input }) => {
       try {
         const vault = await models.Vault.create({
           address: input.address,
@@ -144,7 +144,7 @@ export const vaultResolver = {
       }
     },
 
-    topUpVault: async (_: any, { input }: { input: any }) => {
+    topUpVault: async (_, { input }) => {
       try {
         const vault = await models.Vault.findOne({
           where: { address: input.vaultAddress }
@@ -190,8 +190,8 @@ export const vaultResolver = {
   },
 
   Vault: {
-    orgId: (vault: any) => vault?.org_id ?? null,
-    organization: async (vault: any) => {
+    orgId: (vault) => vault?.org_id ?? null,
+    organization: async (vault) => {
       if (!vault?.org_id) return null;
       try {
         return await models.Organization.findByPk(vault.org_id);
@@ -200,7 +200,7 @@ export const vaultResolver = {
         return null;
       }
     },
-    beneficiaries: async (vault: any) => {
+    beneficiaries: async (vault) => {
       try {
         return await models.Beneficiary.findAll({
           where: { vault_id: vault.id }
@@ -211,7 +211,7 @@ export const vaultResolver = {
       }
     },
 
-    subSchedules: async (vault: any) => {
+    subSchedules: async (vault) => {
       try {
         return await models.SubSchedule.findAll({
           where: { vault_id: vault.id },
@@ -223,18 +223,18 @@ export const vaultResolver = {
       }
     },
 
-    summary: async (vault: any) => {
+    summary: async (vault) => {
       try {
         const beneficiaries = await models.Beneficiary.findAll({
           where: { vault_id: vault.id }
         });
 
-        const totalAllocated = beneficiaries.reduce((sum: number, beneficiary: any) => 
+        const totalAllocated = beneficiaries.reduce((sum, beneficiary) => 
           sum + parseFloat(beneficiary.total_allocated), 0);
-        const totalWithdrawn = beneficiaries.reduce((sum: number, beneficiary: any) => 
+        const totalWithdrawn = beneficiaries.reduce((sum, beneficiary) => 
           sum + parseFloat(beneficiary.total_withdrawn), 0);
         const remainingAmount = totalAllocated - totalWithdrawn;
-        const activeBeneficiaries = beneficiaries.filter((beneficiary: any) => 
+        const activeBeneficiaries = beneficiaries.filter((beneficiary) => 
           parseFloat(beneficiary.total_allocated) > parseFloat(beneficiary.total_withdrawn)).length;
 
         return {
@@ -251,3 +251,5 @@ export const vaultResolver = {
     }
   }
 };
+
+module.exports = { vaultResolver };

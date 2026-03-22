@@ -89,4 +89,11 @@ const Beneficiary = sequelize.define(
   },
 );
 
+Beneficiary.associate = function (models) {
+  Beneficiary.belongsTo(models.Vault, {
+    foreignKey: 'vault_id',
+    as: 'vault'
+  });
+};
+
 module.exports = Beneficiary;

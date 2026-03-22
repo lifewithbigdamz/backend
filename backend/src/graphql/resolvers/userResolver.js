@@ -1,8 +1,58 @@
-import { models } from '../../models';
+const models = require('../../models');
 
-export const userResolver = {
+const calculateWithdrawableAmount = async (vault, beneficiary, timestamp = new Date()) => {
+  const subSchedules = await models.SubSchedule.findAll({
+    where: { vault_id: vault.id },
+    order: [['created_at', 'ASC']]
+  }) || [];
+
+  let totalVested = 0;
+  let totalAllocated = parseFloat(beneficiary.total_allocated);
+  let nextVestTime = null;
+  let isFullyVested = true;
+
+  for (const schedule of subSchedules) {
+    const topUpTime = new Date(schedule.top_up_timestamp).getTime();
+    const start = new Date(schedule.start_timestamp).getTime();
+    const end = new Date(schedule.end_timestamp).getTime();
+    const now = timestamp.getTime();
+    
+    if (now < start) {
+      isFullyVested = false;
+      if (!nextVestTime || start < nextVestTime.getTime()) {
+        nextVestTime = new Date(start);
+      }
+    } else if (now >= end) {
+      totalVested += parseFloat(schedule.top_up_amount);
+    } else {
+      isFullyVested = false;
+      const elapsed = now - topUpTime;
+      const duration = end - topUpTime;
+      const vestedRatio = elapsed / duration;
+      totalVested += parseFloat(schedule.top_up_amount) * vestedRatio;
+      
+      if (!nextVestTime || end < nextVestTime.getTime()) {
+        nextVestTime = new Date(end);
+      }
+    }
+  }
+
+  const totalWithdrawn = parseFloat(beneficiary.total_withdrawn);
+  const totalWithdrawable = Math.min(totalVested, totalAllocated) - totalWithdrawn;
+  const remainingAmount = totalAllocated - totalWithdrawn;
+
+  return {
+    totalWithdrawable: Math.max(0, totalWithdrawable).toString(),
+    vestedAmount: totalVested.toString(),
+    remainingAmount: Math.max(0, remainingAmount).toString(),
+    isFullyVested,
+    nextVestTime
+  };
+};
+
+const userResolver = {
   Query: {
-    beneficiary: async (_: any, { vaultAddress, beneficiaryAddress }: { vaultAddress: string, beneficiaryAddress: string }) => {
+    beneficiary: async (_, { vaultAddress, beneficiaryAddress }) => {
       try {
         const vault = await models.Vault.findOne({
           where: { address: vaultAddress }
@@ -32,7 +82,7 @@ export const userResolver = {
       }
     },
 
-    beneficiaries: async (_: any, { vaultAddress, first = 50, after }: { vaultAddress: string, first?: number, after?: string }) => {
+    beneficiaries: async (_, { vaultAddress, first = 50, after }) => {
       try {
         const vault = await models.Vault.findOne({
           where: { address: vaultAddress }
@@ -64,14 +114,9 @@ export const userResolver = {
       }
     },
 
-    claims: async (_: any, { userAddress, tokenAddress, first = 50, after }: { 
-      userAddress?: string, 
-      tokenAddress?: string, 
-      first?: number, 
-      after?: string 
-    }) => {
+    claims: async (_, { userAddress, tokenAddress, first = 50, after }) => {
       try {
-        const whereClause: any = {};
+        const whereClause = {};
         if (userAddress) whereClause.user_address = userAddress;
         if (tokenAddress) whereClause.token_address = tokenAddress;
 
@@ -91,7 +136,7 @@ export const userResolver = {
       }
     },
 
-    claim: async (_: any, { transactionHash }: { transactionHash: string }) => {
+    claim: async (_, { transactionHash }) => {
       try {
         const claim = await models.ClaimsHistory.findOne({
           where: { transaction_hash: transactionHash }
@@ -103,13 +148,9 @@ export const userResolver = {
       }
     },
 
-    realizedGains: async (_: any, { userAddress, startDate, endDate }: { 
-      userAddress: string, 
-      startDate?: Date, 
-      endDate?: Date 
-    }) => {
+    realizedGains: async (_, { userAddress, startDate, endDate }) => {
       try {
-        const whereClause: any = { user_address: userAddress };
+        const whereClause = { user_address: userAddress };
         
         if (startDate || endDate) {
           whereClause.claim_timestamp = {};
@@ -122,7 +163,7 @@ export const userResolver = {
           order: [['claim_timestamp', 'DESC']]
         });
 
-        const totalGains = claims.reduce((sum: number, claim: any) => {
+        const totalGains = claims.reduce((sum, claim) => {
           const price = parseFloat(claim.price_at_claim_usd || '0');
           const amount = parseFloat(claim.amount_claimed);
           return sum + (price * amount);
@@ -142,7 +183,7 @@ export const userResolver = {
   },
 
   Mutation: {
-    withdraw: async (_: any, { input }: { input: any }) => {
+    withdraw: async (_, { input }) => {
       try {
         const vault = await models.Vault.findOne({
           where: { address: input.vaultAddress }
@@ -188,7 +229,7 @@ export const userResolver = {
       }
     },
 
-    processClaim: async (_: any, { input }: { input: any }) => {
+    processClaim: async (_, { input }) => {
       try {
         const claim = await models.ClaimsHistory.create({
           user_address: input.userAddress,
@@ -206,7 +247,7 @@ export const userResolver = {
       }
     },
 
-    processBatchClaims: async (_: any, { claims }: { claims: any[] }) => {
+    processBatchClaims: async (_, { claims }) => {
       try {
         const processedClaims = await models.ClaimsHistory.bulkCreate(
           claims.map(claim => ({
@@ -249,7 +290,7 @@ export const userResolver = {
   },
 
   Beneficiary: {
-    vault: async (beneficiary: any) => {
+    vault: async (beneficiary) => {
       try {
         return await models.Vault.findByPk(beneficiary.vault_id);
       } catch (error) {
@@ -258,7 +299,7 @@ export const userResolver = {
       }
     },
 
-    withdrawableAmount: async (beneficiary: any, { withdrawableAt }: { withdrawableAt?: Date }) => {
+    withdrawableAmount: async (beneficiary, { withdrawableAt }) => {
       try {
         const vault = await models.Vault.findByPk(beneficiary.vault_id);
         if (!vault) {
@@ -274,54 +315,4 @@ export const userResolver = {
   }
 };
 
-// Helper function to calculate withdrawable amount
-async function calculateWithdrawableAmount(vault: any, beneficiary: any, timestamp: Date = new Date()) {
-  const subSchedules = await models.SubSchedule.findAll({
-    where: { vault_id: vault.id },
-    order: [['created_at', 'ASC']]
-  });
-
-  let totalVested = 0;
-  let totalAllocated = parseFloat(beneficiary.total_allocated);
-  let nextVestTime: Date | null = null;
-  let isFullyVested = true;
-
-  for (const schedule of subSchedules) {
-    const startTime = new Date(schedule.start_timestamp);
-    const endTime = new Date(schedule.end_timestamp);
-    
-    if (timestamp < startTime) {
-      // Still in cliff period for this schedule
-      isFullyVested = false;
-      if (!nextVestTime || startTime < nextVestTime) {
-        nextVestTime = startTime;
-      }
-    } else if (timestamp >= endTime) {
-      // Fully vested for this schedule
-      totalVested += parseFloat(schedule.top_up_amount);
-    } else {
-      // Partially vested
-      isFullyVested = false;
-      const elapsed = timestamp.getTime() - startTime.getTime();
-      const duration = endTime.getTime() - startTime.getTime();
-      const vestedRatio = elapsed / duration;
-      totalVested += parseFloat(schedule.top_up_amount) * vestedRatio;
-      
-      if (!nextVestTime || endTime < nextVestTime) {
-        nextVestTime = endTime;
-      }
-    }
-  }
-
-  const totalWithdrawn = parseFloat(beneficiary.total_withdrawn);
-  const totalWithdrawable = Math.min(totalVested, totalAllocated) - totalWithdrawn;
-  const remainingAmount = totalAllocated - totalWithdrawn;
-
-  return {
-    totalWithdrawable: Math.max(0, totalWithdrawable).toString(),
-    vestedAmount: totalVested.toString(),
-    remainingAmount: Math.max(0, remainingAmount).toString(),
-    isFullyVested,
-    nextVestTime
-  };
-}
+module.exports = { userResolver };

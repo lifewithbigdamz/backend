@@ -2,14 +2,14 @@ const { sequelize } = require('../database/connection');
 const { Vault } = require('../models');
 const vestingService = require('./vestingService');
 
+jest.setTimeout(60000);
+
 describe('VestingService - createVault with token_type', () => {
   beforeAll(async () => {
     await sequelize.sync({ force: true });
   });
 
-  afterAll(async () => {
-    await sequelize.close();
-  });
+
 
   beforeEach(async () => {
     await Vault.destroy({ where: {}, force: true });

@@ -88,4 +88,11 @@ const SubSchedule = sequelize.define('SubSchedule', {
   ],
 });
 
+SubSchedule.associate = function (models) {
+  SubSchedule.belongsTo(models.Vault, {
+    foreignKey: 'vault_id',
+    as: 'vault'
+  });
+};
+
 module.exports = SubSchedule;

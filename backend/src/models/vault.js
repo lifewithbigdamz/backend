@@ -54,6 +54,11 @@ const Vault = sequelize.define('Vault', {
       key: 'id'
     }
   },
+  delegate_address: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Authorized delegate for this vault',
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
@@ -86,6 +91,14 @@ Vault.associate = function (models) {
   Vault.belongsTo(models.Organization, {
     foreignKey: 'org_id',
     as: 'organization'
+  });
+  Vault.hasMany(models.Beneficiary, {
+    foreignKey: 'vault_id',
+    as: 'beneficiaries'
+  });
+  Vault.hasMany(models.SubSchedule, {
+    foreignKey: 'vault_id',
+    as: 'subSchedules'
   });
 };
 

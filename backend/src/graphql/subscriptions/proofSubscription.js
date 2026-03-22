@@ -1,10 +1,10 @@
-import { PubSub } from 'graphql-subscriptions';
-import { models } from '../../models';
+const { PubSub } = require('graphql-subscriptions');
+const { models } = require('../../models');
 
 const pubsub = new PubSub();
 
 // Subscription event constants
-export const SUBSCRIPTION_EVENTS = {
+const SUBSCRIPTION_EVENTS = {
   VAULT_UPDATED: 'VAULT_UPDATED',
   BENEFICIARY_UPDATED: 'BENEFICIARY_UPDATED',
   NEW_CLAIM: 'NEW_CLAIM',
@@ -14,24 +14,21 @@ export const SUBSCRIPTION_EVENTS = {
   TVL_UPDATED: 'TVL_UPDATED'
 };
 
-export const subscriptionResolver = {
+const subscriptionResolver = {
   Subscription: {
     vaultUpdated: {
-      subscribe: (_: any, { vaultAddress }: { vaultAddress?: string }) => {
+      subscribe: (_, { vaultAddress }) => {
         const subscription = vaultAddress 
           ? pubsub.asyncIterator([`${SUBSCRIPTION_EVENTS.VAULT_UPDATED}_${vaultAddress}`])
           : pubsub.asyncIterator([SUBSCRIPTION_EVENTS.VAULT_UPDATED]);
         
         return subscription;
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     beneficiaryUpdated: {
-      subscribe: (_: any, { vaultAddress, beneficiaryAddress }: { 
-        vaultAddress?: string, 
-        beneficiaryAddress?: string 
-      }) => {
+      subscribe: (_, { vaultAddress, beneficiaryAddress }) => {
         let eventName = SUBSCRIPTION_EVENTS.BENEFICIARY_UPDATED;
         
         if (vaultAddress && beneficiaryAddress) {
@@ -42,25 +39,22 @@ export const subscriptionResolver = {
         
         return pubsub.asyncIterator([eventName]);
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     newClaim: {
-      subscribe: (_: any, { userAddress }: { userAddress?: string }) => {
+      subscribe: (_, { userAddress }) => {
         const subscription = userAddress 
           ? pubsub.asyncIterator([`${SUBSCRIPTION_EVENTS.NEW_CLAIM}_${userAddress}`])
           : pubsub.asyncIterator([SUBSCRIPTION_EVENTS.NEW_CLAIM]);
         
         return subscription;
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     withdrawalProcessed: {
-      subscribe: (_: any, { vaultAddress, beneficiaryAddress }: { 
-        vaultAddress?: string, 
-        beneficiaryAddress?: string 
-      }) => {
+      subscribe: (_, { vaultAddress, beneficiaryAddress }) => {
         let eventName = SUBSCRIPTION_EVENTS.WITHDRAWAL_PROCESSED;
         
         if (vaultAddress && beneficiaryAddress) {
@@ -71,38 +65,38 @@ export const subscriptionResolver = {
         
         return pubsub.asyncIterator([eventName]);
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     auditLogCreated: {
       subscribe: () => {
         return pubsub.asyncIterator([SUBSCRIPTION_EVENTS.AUDIT_LOG_CREATED]);
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     adminTransferUpdated: {
-      subscribe: (_: any, { contractAddress }: { contractAddress?: string }) => {
+      subscribe: (_, { contractAddress }) => {
         const subscription = contractAddress 
           ? pubsub.asyncIterator([`${SUBSCRIPTION_EVENTS.ADMIN_TRANSFER_UPDATED}_${contractAddress}`])
           : pubsub.asyncIterator([SUBSCRIPTION_EVENTS.ADMIN_TRANSFER_UPDATED]);
         
         return subscription;
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     },
 
     tvlUpdated: {
       subscribe: () => {
         return pubsub.asyncIterator([SUBSCRIPTION_EVENTS.TVL_UPDATED]);
       },
-      resolve: (payload: any) => payload
+      resolve: (payload) => payload
     }
   }
 };
 
 // Helper functions to publish events
-export const publishVaultUpdate = async (vaultAddress: string, vaultData: any) => {
+const publishVaultUpdate = async (vaultAddress, vaultData) => {
   try {
     const vault = await models.Vault.findOne({
       where: { address: vaultAddress },
@@ -124,16 +118,18 @@ export const publishVaultUpdate = async (vaultAddress: string, vaultData: any) =
       
       // Publish to specific vault updates
       pubsub.publish(`${SUBSCRIPTION_EVENTS.VAULT_UPDATED}_${vaultAddress}`, { vaultUpdated: vault });
+    } else {
+      throw new Error(`Vault not found: ${vaultAddress}`);
     }
   } catch (error) {
     console.error('Error publishing vault update:', error);
   }
 };
 
-export const publishBeneficiaryUpdate = async (
-  vaultAddress: string, 
-  beneficiaryAddress: string, 
-  beneficiaryData: any
+const publishBeneficiaryUpdate = async (
+  vaultAddress, 
+  beneficiaryAddress, 
+  beneficiaryData
 ) => {
   try {
     const vault = await models.Vault.findOne({
@@ -167,14 +163,18 @@ export const publishBeneficiaryUpdate = async (
         pubsub.publish(`${SUBSCRIPTION_EVENTS.BENEFICIARY_UPDATED}_${vaultAddress}_${beneficiaryAddress}`, { 
           beneficiaryUpdated: beneficiary 
         });
+      } else {
+        throw new Error(`Beneficiary not found: ${beneficiaryAddress} in vault ${vaultAddress}`);
       }
+    } else {
+      throw new Error(`Vault not found: ${vaultAddress}`);
     }
   } catch (error) {
     console.error('Error publishing beneficiary update:', error);
   }
 };
 
-export const publishNewClaim = async (userAddress: string, claimData: any) => {
+const publishNewClaim = async (userAddress, claimData) => {
   try {
     const claim = await models.ClaimsHistory.findOne({
       where: { transaction_hash: claimData.transactionHash }
@@ -192,10 +192,10 @@ export const publishNewClaim = async (userAddress: string, claimData: any) => {
   }
 };
 
-export const publishWithdrawalProcessed = async (
-  vaultAddress: string, 
-  beneficiaryAddress: string, 
-  withdrawableInfo: any
+const publishWithdrawalProcessed = async (
+  vaultAddress, 
+  beneficiaryAddress, 
+  withdrawableInfo
 ) => {
   try {
     // Publish to general withdrawal updates
@@ -215,7 +215,7 @@ export const publishWithdrawalProcessed = async (
   }
 };
 
-export const publishAuditLogCreated = async (auditLog: any) => {
+const publishAuditLogCreated = async (auditLog) => {
   try {
     pubsub.publish(SUBSCRIPTION_EVENTS.AUDIT_LOG_CREATED, { auditLogCreated: auditLog });
   } catch (error) {
@@ -223,7 +223,7 @@ export const publishAuditLogCreated = async (auditLog: any) => {
   }
 };
 
-export const publishAdminTransferUpdated = async (contractAddress: string, transferData: any) => {
+const publishAdminTransferUpdated = async (contractAddress, transferData) => {
   try {
     // Publish to general admin transfer updates
     pubsub.publish(SUBSCRIPTION_EVENTS.ADMIN_TRANSFER_UPDATED, { adminTransferUpdated: transferData });
@@ -237,7 +237,7 @@ export const publishAdminTransferUpdated = async (contractAddress: string, trans
   }
 };
 
-export const publishTVLUpdate = async (tvlStats: any) => {
+const publishTVLUpdate = async (tvlStats) => {
   try {
     pubsub.publish(SUBSCRIPTION_EVENTS.TVL_UPDATED, { tvlUpdated: tvlStats });
     console.log('TVL update published via WebSocket:', tvlStats);
@@ -247,4 +247,15 @@ export const publishTVLUpdate = async (tvlStats: any) => {
 };
 
 // Export pubsub instance for use in other resolvers
-export { pubsub };
+module.exports = {
+  SUBSCRIPTION_EVENTS,
+  subscriptionResolver,
+  publishVaultUpdate,
+  publishBeneficiaryUpdate,
+  publishNewClaim,
+  publishWithdrawalProcessed,
+  publishAuditLogCreated,
+  publishAdminTransferUpdated,
+  publishTVLUpdate,
+  pubsub 
+};

@@ -1,40 +1,47 @@
-import { models } from '../../../models';
-import { vaultResolver } from '../resolvers/vaultResolver';
-import { userResolver } from '../resolvers/userResolver';
-import { proofResolver } from '../resolvers/proofResolver';
+const models = require('../../models');
+const { vaultResolver } = require('../resolvers/vaultResolver');
+const { userResolver } = require('../resolvers/userResolver');
+const { proofResolver } = require('../resolvers/proofResolver');
 
 // Mock models
-jest.mock('../../../models', () => ({
-  models: {
-    Vault: {
-      findOne: jest.fn(),
-      findAll: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn()
-    },
-    Beneficiary: {
-      findOne: jest.fn(),
-      findAll: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn()
-    },
-    SubSchedule: {
-      create: jest.fn(),
-      findAll: jest.fn()
-    },
-    ClaimsHistory: {
-      findOne: jest.fn(),
-      findAll: jest.fn(),
-      create: jest.fn(),
-      bulkCreate: jest.fn()
-    },
-    Sequelize: {
-      Op: {
-        gte: jest.fn(),
-        lte: jest.fn()
-      }
+jest.mock('../../models', () => ({
+  Vault: {
+    findOne: jest.fn(),
+    findAll: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn()
+  },
+  Beneficiary: {
+    findOne: jest.fn(),
+    findAll: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn()
+  },
+  SubSchedule: {
+    create: jest.fn(),
+    findAll: jest.fn()
+  },
+  ClaimsHistory: {
+    findOne: jest.fn(),
+    findAll: jest.fn(),
+    create: jest.fn(),
+    bulkCreate: jest.fn()
+  },
+  Sequelize: {
+    Op: {
+      in: Symbol('in'),
+      gte: jest.fn(),
+      lte: jest.fn()
     }
   }
+}));
+
+jest.mock('../middleware/auth', () => ({
+  isAdminOfOrg: jest.fn().mockResolvedValue(true),
+  canAccessVault: jest.fn().mockResolvedValue({ canAccess: true, role: 'admin' }),
+  authMiddleware: jest.fn().mockImplementation(() => (resolve) => resolve()),
+  vaultAccessMiddleware: jest.fn().mockImplementation(() => (resolve) => resolve()),
+  adaptiveRateLimitMiddleware: jest.fn().mockImplementation(() => (resolve) => resolve())
 }));
 
 describe('GraphQL Resolvers', () => {
@@ -43,29 +50,7 @@ describe('GraphQL Resolvers', () => {
   });
 
   describe('Vault Resolver', () => {
-        it('should deny access when admin does not belong to org', async () => {
-          // Simulate Organization A's admin trying to access Organization B's vault
-          const mockOrgA = { id: 'orgA', admin_address: '0xadminA' };
-          const mockOrgB = { id: 'orgB', admin_address: '0xadminB' };
-          // Mock isAdminOfOrg to return false
-          jest.mock('../middleware/auth', () => ({
-            isAdminOfOrg: jest.fn().mockResolvedValue(false)
-          }));
-          await expect(vaultResolver.Query.vault(null, { address: '0xvaultB', orgId: mockOrgB.id, adminAddress: mockOrgA.admin_address }))
-            .rejects.toThrow('Access denied: admin does not belong to organization.');
-        });
 
-        it('should allow access when admin belongs to org', async () => {
-          const mockOrgA = { id: 'orgA', admin_address: '0xadminA' };
-          const mockVault = { id: '1', address: '0xvaultA', org_id: 'orgA', beneficiaries: [], subSchedules: [] };
-          // Mock isAdminOfOrg to return true
-          jest.mock('../middleware/auth', () => ({
-            isAdminOfOrg: jest.fn().mockResolvedValue(true)
-          }));
-          (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-          const result = await vaultResolver.Query.vault(null, { address: '0xvaultA', orgId: mockOrgA.id, adminAddress: mockOrgA.admin_address });
-          expect(result).toEqual(mockVault);
-        });
     describe('Query.vault', () => {
       it('should fetch a vault by address', async () => {
         const mockVault = {
@@ -79,7 +64,7 @@ describe('GraphQL Resolvers', () => {
           subSchedules: []
         };
 
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
+        models.Vault.findOne.mockResolvedValue(mockVault);
 
         const result = await vaultResolver.Query.vault(null, { address: '0x123...' });
 
@@ -93,11 +78,31 @@ describe('GraphQL Resolvers', () => {
         expect(result).toEqual(mockVault);
       });
 
-      it('should throw error when vault not found', async () => {
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(null);
+      it('should return null for non-existent vault', async () => {
+        models.Vault.findOne.mockResolvedValue(null);
 
-        await expect(vaultResolver.Query.vault(null, { address: '0x123...' }))
-          .rejects.toThrow('Failed to fetch vault');
+        const result = await vaultResolver.Query.vault(null, { address: '0x123...' });
+        expect(result).toBeNull();
+      });
+
+      it('should deny access when admin does not belong to org', async () => {
+        const { isAdminOfOrg } = require('../middleware/auth');
+        isAdminOfOrg.mockResolvedValueOnce(false);
+
+        await expect(vaultResolver.Query.vault(null, {
+          address: '0x123...',
+          orgId: 'org123',
+          adminAddress: '0xwrongadmin'
+        })).rejects.toThrow('Access denied: admin does not belong to organization.');
+      });
+
+      it('should allow access when admin belongs to org', async () => {
+        const mockOrgA = { id: 'orgA', admin_address: '0xadminA' };
+        const mockVault = { id: '1', address: '0xvaultA', org_id: 'orgA', beneficiaries: [], subSchedules: [] };
+        
+        models.Vault.findOne.mockResolvedValue(mockVault);
+        const result = await vaultResolver.Query.vault(null, { address: '0xvaultA', orgId: mockOrgA.id, adminAddress: mockOrgA.admin_address });
+        expect(result).toEqual(mockVault);
       });
     });
 
@@ -108,16 +113,17 @@ describe('GraphQL Resolvers', () => {
           { id: '2', address: '0x456...' }
         ];
 
-        (models.Vault.findAll as jest.Mock).mockResolvedValue(mockVaults);
+        models.Vault.findAll.mockResolvedValue(mockVaults);
 
         const result = await vaultResolver.Query.vaults(null, { 
-          ownerAddress: '0xowner...', 
+          orgId: 'org123',
+          adminAddress: '0xadmin...',
           first: 10, 
           after: '0' 
         });
 
         expect(models.Vault.findAll).toHaveBeenCalledWith({
-          where: { owner_address: '0xowner...' },
+          where: { org_id: 'org123' },
           include: [
             { model: models.Beneficiary, as: 'beneficiaries' },
             { model: models.SubSchedule, as: 'subSchedules' }
@@ -141,7 +147,7 @@ describe('GraphQL Resolvers', () => {
           total_amount: '1000'
         };
 
-        (models.Vault.create as jest.Mock).mockResolvedValue(mockVault);
+        models.Vault.create.mockResolvedValue(mockVault);
 
         const input = {
           address: '0x123...',
@@ -177,8 +183,8 @@ describe('GraphQL Resolvers', () => {
           total_withdrawn: '100'
         };
 
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-        (models.Beneficiary.findOne as jest.Mock).mockResolvedValue(mockBeneficiary);
+        models.Vault.findOne.mockResolvedValue(mockVault);
+        models.Beneficiary.findOne.mockResolvedValue(mockBeneficiary);
 
         const result = await userResolver.Query.beneficiary(null, {
           vaultAddress: '0x123...',
@@ -210,7 +216,7 @@ describe('GraphQL Resolvers', () => {
           }
         ];
 
-        (models.ClaimsHistory.findAll as jest.Mock).mockResolvedValue(mockClaims);
+        models.ClaimsHistory.findAll.mockResolvedValue(mockClaims);
 
         const result = await userResolver.Query.claims(null, {
           userAddress: '0xuser...',
@@ -234,6 +240,21 @@ describe('GraphQL Resolvers', () => {
 
     describe('Mutation.withdraw', () => {
       it('should process withdrawal successfully', async () => {
+        const now = new Date();
+        const past = new Date(now.getTime() - 86400 * 10 * 1000); // 10 days ago
+        const end = new Date(now.getTime() - 86400 * 5 * 1000); // 5 days ago (already ended)
+
+        const mockSubSchedule = {
+          id: '1',
+          vault_id: '1',
+          top_up_amount: '1000',
+          top_up_timestamp: past,
+          start_timestamp: past,
+          end_timestamp: end,
+          cliff_duration: 0,
+          vesting_duration: 86400 * 5
+        };
+
         const mockVault = { id: '1', address: '0x123...' };
         const mockBeneficiary = {
           id: '1',
@@ -244,8 +265,9 @@ describe('GraphQL Resolvers', () => {
           update: jest.fn().mockResolvedValue({})
         };
 
-        (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-        (models.Beneficiary.findOne as jest.Mock).mockResolvedValue(mockBeneficiary);
+        models.Vault.findOne.mockResolvedValue(mockVault);
+        models.Beneficiary.findOne.mockResolvedValue(mockBeneficiary);
+        models.SubSchedule.findAll.mockResolvedValue([mockSubSchedule]);
 
         const input = {
           vaultAddress: '0x123...',
@@ -299,7 +321,7 @@ describe('GraphQL Resolvers', () => {
 
 describe('Resolver Error Handling', () => {
   it('should handle database errors gracefully', async () => {
-    (models.Vault.findOne as jest.Mock).mockRejectedValue(new Error('Database connection failed'));
+    models.Vault.findOne.mockRejectedValue(new Error('Database connection failed'));
 
     await expect(vaultResolver.Query.vault(null, { address: '0x123...' }))
       .rejects.toThrow('Failed to fetch vault: Database connection failed');
@@ -313,8 +335,8 @@ describe('Resolver Error Handling', () => {
       total_withdrawn: '100'
     };
 
-    (models.Vault.findOne as jest.Mock).mockResolvedValue(mockVault);
-    (models.Beneficiary.findOne as jest.Mock).mockResolvedValue(mockBeneficiary);
+    models.Vault.findOne.mockResolvedValue(mockVault);
+    models.Beneficiary.findOne.mockResolvedValue(mockBeneficiary);
 
     const input = {
       vaultAddress: '0x123...',

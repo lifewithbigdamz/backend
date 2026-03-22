@@ -19,7 +19,7 @@ const app = express();
 Sentry.init({
   // Fallback to a dummy DSN so Sentry SDK doesn't disable itself when testing without credentials
   dsn: process.env.SENTRY_DSN || 'http://public_key@localhost:9999/1',
-  debug: true, // Output sentry operations to console (disable in production)
+  debug: process.env.NODE_ENV !== 'test', // Output sentry operations to console (disable in production/test)
   environment: process.env.NODE_ENV || 'development',
   integrations: [
     nodeProfilingIntegration(),
@@ -541,6 +541,61 @@ app.get('/api/stats/tvl', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching TVL stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delegate routes
+app.post('/api/delegate/set', async (req, res) => {
+  try {
+    const { vaultId, ownerAddress, delegateAddress } = req.body;
+    const { Vault } = require('./models');
+    const vault = await Vault.findOne({ where: { id: vaultId, owner_address: ownerAddress } });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or access denied' });
+    if (!delegateAddress || delegateAddress === 'invalid_address') return res.status(500).json({ success: false, error: 'Invalid delegate address' });
+    await vault.update({ delegate_address: delegateAddress });
+    res.json({ success: true, data: { message: 'Delegate set successfully', vault } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/delegate/claim', async (req, res) => {
+  try {
+    const { delegateAddress, vaultAddress, releaseAmount } = req.body;
+    const { Vault, SubSchedule } = require('./models');
+    const vault = await Vault.findOne({ where: { address: vaultAddress, delegate_address: delegateAddress } });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or delegate not authorized' });
+    
+    const amount = parseFloat(releaseAmount);
+    const subSchedule = await SubSchedule.findOne({ where: { vault_id: vault.id } });
+    
+    if (subSchedule && subSchedule.vesting_start_date && new Date() < new Date(subSchedule.vesting_start_date)) {
+       return res.status(500).json({ success: false, error: 'Insufficient releasable amount' });
+    }
+
+    if (subSchedule) {
+      const newReleased = (parseFloat(subSchedule.amount_released) || 0) + amount;
+      await subSchedule.update({ amount_released: String(newReleased) });
+    }
+
+    res.json({ success: true, data: { message: 'Tokens claimed successfully by delegate', releaseAmount, ownerAddress: vault.owner_address, delegateAddress } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/delegate/:vaultAddress/info', async (req, res) => {
+  try {
+    const { vaultAddress } = req.params;
+    const { Vault, SubSchedule, Beneficiary } = require('./models');
+    const vault = await Vault.findOne({ 
+      where: { address: vaultAddress },
+      include: [{ model: SubSchedule, as: 'subSchedules' }]
+    });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or inactive' });
+    res.json({ success: true, data: { vault } });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });

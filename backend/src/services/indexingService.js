@@ -417,7 +417,7 @@ class IndexingService {
     } = topUpData;
 
     const vault = await Vault.findOne({
-      where: { vault_address, is_active: true }
+      where: { address: vault_address }
     });
 
     if (!vault) {
@@ -467,20 +467,27 @@ class IndexingService {
     let cliffDate = null;
     let vestingStartDate = topUpTimestamp;
 
-    if (cliff_duration && cliff_duration > 0) {
-      cliffDate = new Date(topUpTimestamp.getTime() + cliff_duration * 1000);
+    const cliff_dur = topUpData.cliff_duration !== undefined ? topUpData.cliff_duration : topUpData.cliff_duration_seconds;
+    const vesting_dur = topUpData.vesting_duration !== undefined ? topUpData.vesting_duration : topUpData.vesting_duration_seconds;
+
+    if (cliff_dur && cliff_dur > 0) {
+      cliffDate = new Date(topUpTimestamp.getTime() + cliff_dur * 1000);
       vestingStartDate = cliffDate;
     }
+
+    const endTimestamp = new Date(vestingStartDate.getTime() + (vesting_dur || 0) * 1000);
 
     const subSchedule = await SubSchedule.create({
       vault_id: vault.id,
       top_up_amount: actualReceivedAmount,
-      top_up_transaction_hash: transaction_hash,
-      top_up_timestamp: topUpTimestamp,
-      cliff_duration,
-      cliff_date: cliffDate,
+      transaction_hash: transaction_hash,
       vesting_start_date: vestingStartDate,
-      vesting_duration,
+      start_timestamp: topUpTimestamp,
+      end_timestamp: endTimestamp,
+      cliff_duration: cliff_dur || 0,
+      cliff_date: cliffDate,
+      vesting_duration: vesting_dur || 0,
+      block_number
     });
 
     await vault.update({
@@ -511,7 +518,7 @@ class IndexingService {
     } = releaseData;
 
     const vault = await Vault.findOne({
-      where: { vault_address, is_active: true },
+      where: { address: vault_address },
       include: [{
         model: SubSchedule,
         as: 'subSchedules',
@@ -558,21 +565,24 @@ class IndexingService {
 }
 
 calculateSubScheduleReleasable(subSchedule, asOfDate = new Date()) {
-  if (subSchedule.cliff_date && asOfDate < subSchedule.cliff_date) {
+  const checkTime = asOfDate instanceof Date ? asOfDate : new Date(asOfDate);
+  
+  if (subSchedule.cliff_date && checkTime < subSchedule.cliff_date) {
     return 0;
   }
 
-  if (asOfDate < subSchedule.vesting_start_date) {
+  if (checkTime < subSchedule.vesting_start_date) {
     return 0;
   }
 
-  const vestingEnd = new Date(subSchedule.vesting_start_date.getTime() + subSchedule.vesting_duration * 1000);
-  if (asOfDate >= vestingEnd) {
+  if (checkTime >= subSchedule.end_timestamp) {
     return parseFloat(subSchedule.top_up_amount) - parseFloat(subSchedule.amount_released);
   }
 
-  const vestedTime = asOfDate - subSchedule.vesting_start_date;
-  const vestedRatio = vestedTime / (subSchedule.vesting_duration * 1000);
+  const duration = subSchedule.end_timestamp.getTime() - subSchedule.vesting_start_date.getTime();
+  const elapsed = checkTime.getTime() - subSchedule.vesting_start_date.getTime();
+  
+  const vestedRatio = duration > 0 ? (elapsed / duration) : 1;
   const totalVested = parseFloat(subSchedule.top_up_amount) * vestedRatio;
   const releasable = totalVested - parseFloat(subSchedule.amount_released);
 

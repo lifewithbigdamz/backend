@@ -1,4 +1,22 @@
 const request = require('supertest');
+
+// Mock Redis client early to prevent connection attempts in tests
+jest.mock('redis', () => ({
+  createClient: jest.fn(() => ({
+    on: jest.fn(),
+    connect: jest.fn().mockResolvedValue(),
+    isOpen: true,
+  })),
+}));
+
+// Mock indexing service's initialization which might attempt connections
+jest.mock('../src/services/indexingService', () => ({
+  initialize: jest.fn().mockResolvedValue(),
+  initContract: jest.fn(),
+  indexHistoricalBlocks: jest.fn(),
+  listenToEvents: jest.fn(),
+}));
+
 const app = require('../src/index');
 const { sequelize } = require('../src/database/connection');
 const { Vault, SubSchedule } = require('../src/models');
@@ -24,7 +42,7 @@ describe('Delegate Functionality Tests', () => {
   beforeEach(async () => {
     // Create a test vault
     testVault = await Vault.create({
-      vault_address: vaultAddress,
+      address: vaultAddress,
       owner_address: ownerAddress,
       token_address: tokenAddress,
       total_amount: totalAmount,
@@ -39,6 +57,9 @@ describe('Delegate Functionality Tests', () => {
       top_up_amount: '1000.0',
       top_up_transaction_hash: '0x1234567890abcdef',
       top_up_timestamp: new Date('2023-01-01'),
+      start_timestamp: new Date('2023-01-01'),
+      end_timestamp: new Date('2023-12-31'),
+      transaction_hash: '0x1234567890abcdef',
       cliff_duration: 86400 * 30, // 30 days
       cliff_date: new Date('2023-02-01'),
       vesting_start_date: new Date('2023-02-01'),
@@ -184,7 +205,7 @@ describe('Delegate Functionality Tests', () => {
       expect(response).toSatisfyApiSpec();
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.vault.vault_address).toBe(vaultAddress);
+      expect(response.body.data.vault.address).toBe(vaultAddress);
       expect(response.body.data.vault.owner_address).toBe(ownerAddress);
       expect(response.body.data.vault.delegate_address).toBe(delegateAddress);
       expect(response.body.data.vault.subSchedules).toBeDefined();
