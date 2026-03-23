@@ -14,7 +14,10 @@ class BalanceTracker {
    * @param {string} rpcUrl - Stellar RPC URL for querying balances
    */
   constructor(rpcUrl = null) {
-    this.rpcUrl = rpcUrl || process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org';
+    this.rpcUrl = rpcUrl || process.env.STELLAR_RPC_URL;
+    if (!this.rpcUrl) {
+      throw new Error('STELLAR_RPC_URL environment variable is required');
+    }
   }
 
   /**
