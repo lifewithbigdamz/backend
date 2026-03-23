@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 const { Client } = require('pg');
 const { Server } = require('stellar-sdk');
+const { validateNetworkOnStartup } = require('./backend/src/jobs/networkValidation');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -46,7 +47,10 @@ app.get('/health', async (req, res) => {
 
   // Check Stellar RPC connection
   try {
-    const stellarServer = new Server(process.env.STELLAR_RPC_URL || 'https://horizon-testnet.stellar.org');
+    if (!process.env.STELLAR_RPC_URL) {
+      throw new Error('STELLAR_RPC_URL is not configured');
+    }
+    const stellarServer = new Server(process.env.STELLAR_RPC_URL);
     await stellarServer.root();
     health.services.stellar = 'healthy';
   } catch (error) {
@@ -68,11 +72,24 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
+  const dbStatus = dbManager.getStatus();
   res.json({ 
     project: 'Vesting Vault', 
     status: 'Tracking Locked Tokens', 
-    contract: 'CD5QF6KBAURVUNZR2EVBJISWSEYGDGEEYVH2XYJJADKT7KFOXTTIXLHU' 
+    contract: process.env.VAULT_CONTRACT_ADDRESS 
+    contract: 'CD5QF6KBAURVUNZR2EVBJISWSEYGDGEEYVH2XYJJADKT7KFOXTTIXLHU',
+    database: dbStatus
   });
 });
 
-app.listen(port, () => console.log(`Vesting API running on port ${port}`));
+async function startServer() {
+  try {
+    await validateNetworkOnStartup();
+    app.listen(port, () => console.log(`Vesting API running on port ${port}`));
+  } catch (error) {
+    console.error('\n❌ Fatal Startup Error:', error.message, '\n');
+    process.exit(1);
+  }
+}
+
+startServer();

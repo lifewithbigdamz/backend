@@ -4,6 +4,9 @@ const slackWebhookService = require('./slackWebhookService');
 const tvlService = require('./tvlService');
 const cacheService = require('./cacheService');
 const Sentry = require('@sentry/node');
+const ClaimCalculator = require('./claimCalculator');
+const { TokenType } = require('../models/vault');
+const { InsufficientBalanceError } = require('../errors/VaultErrors');
 
 const EventEmitter = require('events');
 const claimEventEmitter = new EventEmitter();
@@ -96,6 +99,191 @@ class IndexingService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Execute a claim for a specific subschedule
+   * This method calculates the claimable amount, verifies balance for dynamic tokens,
+   * and updates the subschedule's amount_withdrawn
+   * 
+   * @param {string} vaultId - The vault ID
+   * @param {string} subScheduleId - The subschedule ID
+   * @param {Date} currentTime - Current timestamp (optional, defaults to now)
+   * @returns {Promise<Object>} Claim result with amount and timestamp
+   * @throws {InsufficientBalanceError} If insufficient balance for dynamic tokens
+   * @throws {Error} If vault or subschedule not found
+   */
+  async executeClaimForSubSchedule(vaultId, subScheduleId, currentTime = null) {
+    try {
+      const asOfTime = currentTime || new Date();
+
+      // Fetch vault with all subschedules
+      const vault = await Vault.findByPk(vaultId, {
+        include: [{
+          model: SubSchedule,
+          as: 'subSchedules',
+          where: { is_active: true },
+          required: false
+        }]
+      });
+
+      if (!vault) {
+        throw new Error(`Vault ${vaultId} not found`);
+      }
+
+      // Fetch the specific subschedule
+      const subSchedule = await SubSchedule.findByPk(subScheduleId);
+
+      if (!subSchedule) {
+        throw new Error(`SubSchedule ${subScheduleId} not found`);
+      }
+
+      if (!subSchedule.is_active) {
+        throw new Error(`SubSchedule ${subScheduleId} is not active`);
+      }
+
+      // Use ClaimCalculator to determine claimable amount
+      const claimCalculator = new ClaimCalculator();
+      const claimableAmount = await claimCalculator.calculateClaimable(
+        vault,
+        subSchedule,
+        asOfTime,
+        vault.subSchedules || []
+      );
+
+      const claimableNum = parseFloat(claimableAmount);
+
+      // Handle zero or negative claimable amount
+      if (claimableNum <= 0) {
+        throw new InsufficientBalanceError(0, 0);
+      }
+
+      // For dynamic tokens, verify sufficient actual balance before transfer
+      if (vault.token_type === TokenType.DYNAMIC) {
+        const BalanceTracker = require('./balanceTracker');
+        const balanceTracker = new BalanceTracker();
+
+        try {
+          const actualBalance = await balanceTracker.getActualBalance(
+            vault.token_address,
+            vault.address
+          );
+          const actualBalanceNum = parseFloat(actualBalance);
+
+          // Check if actual balance is sufficient
+          if (actualBalanceNum < claimableNum) {
+            throw new InsufficientBalanceError(claimableNum, actualBalanceNum);
+          }
+
+          // Handle zero balance case with descriptive error
+          if (actualBalanceNum === 0) {
+            throw new InsufficientBalanceError(claimableNum, 0);
+          }
+        } catch (error) {
+          // If it's already an InsufficientBalanceError, rethrow it
+          if (error instanceof InsufficientBalanceError) {
+            throw error;
+          }
+          // For other errors (like balance query failures), log and rethrow
+          console.error('Error verifying balance for dynamic token:', error);
+          throw error;
+        }
+      }
+
+      // Execute transfer (placeholder - in real implementation, this would call the smart contract)
+      // For now, we'll just update the subschedule's amount_withdrawn
+      // In a real implementation, you would:
+      // 1. Call the vault smart contract to execute the transfer
+      // 2. Wait for transaction confirmation
+      // 3. Then update the database
+
+      // Update subschedule.amount_withdrawn
+      const newAmountWithdrawn = parseFloat(subSchedule.amount_withdrawn) + claimableNum;
+      await subSchedule.update({
+        amount_withdrawn: String(newAmountWithdrawn)
+      });
+
+      console.log(`Executed claim for subschedule ${subScheduleId}: ${claimableNum} tokens`);
+
+      return {
+        amount: claimableNum,
+        timestamp: asOfTime,
+        vault_id: vaultId,
+        subschedule_id: subScheduleId,
+        token_type: vault.token_type
+      };
+    } catch (error) {
+      // Log error with context
+      console.error('Error executing claim:', error);
+      
+      Sentry.captureException(error, {
+        tags: { operation: 'executeClaimForSubSchedule' },
+        extra: { vaultId, subScheduleId, currentTime }
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Execute multiple sequential claims for different subschedules
+   * Handles depletion gracefully by processing claims in order and stopping when balance is insufficient
+   * 
+   * @param {Array<Object>} claimRequests - Array of {vaultId, subScheduleId} objects
+   * @param {Date} currentTime - Current timestamp (optional, defaults to now)
+   * @returns {Promise<Object>} Results with successful claims and any errors
+   */
+  async executeSequentialClaims(claimRequests, currentTime = null) {
+    const results = {
+      successful: [],
+      failed: [],
+      totalProcessed: 0,
+      totalFailed: 0
+    };
+
+    for (const request of claimRequests) {
+      try {
+        const { vaultId, subScheduleId } = request;
+        
+        // Execute claim for this subschedule
+        const claimResult = await this.executeClaimForSubSchedule(
+          vaultId,
+          subScheduleId,
+          currentTime
+        );
+
+        results.successful.push({
+          vaultId,
+          subScheduleId,
+          amount: claimResult.amount,
+          timestamp: claimResult.timestamp
+        });
+        results.totalProcessed++;
+
+      } catch (error) {
+        // Handle errors gracefully without panicking
+        const errorInfo = {
+          vaultId: request.vaultId,
+          subScheduleId: request.subScheduleId,
+          error: error.message,
+          errorType: error.constructor.name
+        };
+
+        // For InsufficientBalanceError, include the balance details
+        if (error instanceof InsufficientBalanceError) {
+          errorInfo.requested = error.requested;
+          errorInfo.available = error.available;
+        }
+
+        results.failed.push(errorInfo);
+        results.totalFailed++;
+
+        // Log the error but continue processing other claims
+        console.error(`Failed to execute claim for subschedule ${request.subScheduleId}:`, error.message);
+      }
+    }
+
+    return results;
   }
 
   async processBatchClaims(claimsData) {
@@ -229,38 +417,84 @@ class IndexingService {
     } = topUpData;
 
     const vault = await Vault.findOne({
-      where: { vault_address, is_active: true }
+      where: { address: vault_address }
     });
 
     if (!vault) {
       throw new Error(`Vault ${vault_address} not found or inactive`);
     }
 
+    // Determine actual received amount based on token type
+    let actualReceivedAmount = top_up_amount;
+    
+    if (vault.token_type === 'dynamic') {
+      // For dynamic tokens, verify actual received amount
+      const BalanceTracker = require('./balanceTracker');
+      const balanceTracker = new BalanceTracker();
+      
+      try {
+        // Query balance before transfer (this would typically be done before the transfer)
+        // For now, we'll assume the transfer has already happened and query the current balance
+        // In a real implementation, you'd query before and after the transfer
+        const balanceBefore = await balanceTracker.getActualBalance(
+          vault.token_address,
+          vault_address
+        );
+        
+        // Note: In a real implementation, the transfer would happen here
+        // and we'd query the balance after
+        
+        // For this implementation, we'll use verifyDeposit which calculates the delta
+        // This assumes we have the balance before the deposit
+        // In practice, this would be called with the actual balance before the transfer
+        actualReceivedAmount = await balanceTracker.verifyDeposit(
+          vault.token_address,
+          vault_address,
+          String(parseFloat(balanceBefore) - parseFloat(top_up_amount))
+        );
+        
+        console.log(`Dynamic token deposit: Expected ${top_up_amount}, Actual received ${actualReceivedAmount}`);
+      } catch (balanceError) {
+        console.error('Error verifying dynamic token deposit:', balanceError);
+        // Log the error but continue with the expected amount
+        // In production, you might want to handle this differently
+        console.warn(`Using expected amount ${top_up_amount} due to balance verification failure`);
+      }
+    }
+    // For static tokens, use the transfer amount as-is (current behavior)
+
     const topUpTimestamp = new Date(timestamp);
     let cliffDate = null;
     let vestingStartDate = topUpTimestamp;
 
-    if (cliff_duration && cliff_duration > 0) {
-      cliffDate = new Date(topUpTimestamp.getTime() + cliff_duration * 1000);
+    const cliff_dur = topUpData.cliff_duration !== undefined ? topUpData.cliff_duration : topUpData.cliff_duration_seconds;
+    const vesting_dur = topUpData.vesting_duration !== undefined ? topUpData.vesting_duration : topUpData.vesting_duration_seconds;
+
+    if (cliff_dur && cliff_dur > 0) {
+      cliffDate = new Date(topUpTimestamp.getTime() + cliff_dur * 1000);
       vestingStartDate = cliffDate;
     }
 
+    const endTimestamp = new Date(vestingStartDate.getTime() + (vesting_dur || 0) * 1000);
+
     const subSchedule = await SubSchedule.create({
       vault_id: vault.id,
-      top_up_amount,
-      top_up_transaction_hash: transaction_hash,
-      top_up_timestamp: topUpTimestamp,
-      cliff_duration,
-      cliff_date: cliffDate,
+      top_up_amount: actualReceivedAmount,
+      transaction_hash: transaction_hash,
       vesting_start_date: vestingStartDate,
-      vesting_duration,
+      start_timestamp: topUpTimestamp,
+      end_timestamp: endTimestamp,
+      cliff_duration: cliff_dur || 0,
+      cliff_date: cliffDate,
+      vesting_duration: vesting_dur || 0,
+      block_number
     });
 
     await vault.update({
-      total_amount: parseFloat(vault.total_amount) + parseFloat(top_up_amount),
+      total_amount: parseFloat(vault.total_amount) + parseFloat(actualReceivedAmount),
     });
 
-    console.log(`Processed top-up ${transaction_hash} for vault ${vault_address}`);
+    console.log(`Processed top-up ${transaction_hash} for vault ${vault_address}, amount: ${actualReceivedAmount}`);
     return subSchedule;
   } catch (error) {
     console.error('Error processing top-up event:', error);
@@ -284,7 +518,7 @@ class IndexingService {
     } = releaseData;
 
     const vault = await Vault.findOne({
-      where: { vault_address, is_active: true },
+      where: { address: vault_address },
       include: [{
         model: SubSchedule,
         as: 'subSchedules',
@@ -331,21 +565,24 @@ class IndexingService {
 }
 
 calculateSubScheduleReleasable(subSchedule, asOfDate = new Date()) {
-  if (subSchedule.cliff_date && asOfDate < subSchedule.cliff_date) {
+  const checkTime = asOfDate instanceof Date ? asOfDate : new Date(asOfDate);
+  
+  if (subSchedule.cliff_date && checkTime < subSchedule.cliff_date) {
     return 0;
   }
 
-  if (asOfDate < subSchedule.vesting_start_date) {
+  if (checkTime < subSchedule.vesting_start_date) {
     return 0;
   }
 
-  const vestingEnd = new Date(subSchedule.vesting_start_date.getTime() + subSchedule.vesting_duration * 1000);
-  if (asOfDate >= vestingEnd) {
+  if (checkTime >= subSchedule.end_timestamp) {
     return parseFloat(subSchedule.top_up_amount) - parseFloat(subSchedule.amount_released);
   }
 
-  const vestedTime = asOfDate - subSchedule.vesting_start_date;
-  const vestedRatio = vestedTime / (subSchedule.vesting_duration * 1000);
+  const duration = subSchedule.end_timestamp.getTime() - subSchedule.vesting_start_date.getTime();
+  const elapsed = checkTime.getTime() - subSchedule.vesting_start_date.getTime();
+  
+  const vestedRatio = duration > 0 ? (elapsed / duration) : 1;
   const totalVested = parseFloat(subSchedule.top_up_amount) * vestedRatio;
   const releasable = totalVested - parseFloat(subSchedule.amount_released);
 
