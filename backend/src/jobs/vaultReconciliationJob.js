@@ -6,8 +6,15 @@ const axios = require('axios');
 class VaultReconciliationJob {
   constructor() {
     this.cronSchedule = '0 */6 * * *'; // Run every 6 hours
-    this.contractAddress = process.env.VAULT_CONTRACT_ADDRESS || 'CD5QF6KBAURVUNZR2EVBJISWSEYGDGEEYVH2XYJJADKT7KFOXTTIXLHU';
-    this.stellarRpcUrl = process.env.STELLAR_RPC_URL || 'https://horizon-testnet.stellar.org';
+    this.contractAddress = process.env.VAULT_CONTRACT_ADDRESS;
+    this.stellarRpcUrl = process.env.STELLAR_RPC_URL;
+
+    if (!this.contractAddress) {
+      throw new Error('VAULT_CONTRACT_ADDRESS environment variable is required');
+    }
+    if (!this.stellarRpcUrl) {
+      throw new Error('STELLAR_RPC_URL environment variable is required');
+    }
   }
 
   start() {

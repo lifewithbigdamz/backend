@@ -71,6 +71,10 @@ DB_PASSWORD=password
 
 # Optional: CoinGecko API (for higher rate limits)
 COINGECKO_API_KEY=your_api_key_here
+
+# Stellar Network Configuration
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 ```
 
 ### 4. Start the Application

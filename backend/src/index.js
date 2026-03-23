@@ -19,7 +19,7 @@ const app = express();
 Sentry.init({
   // Fallback to a dummy DSN so Sentry SDK doesn't disable itself when testing without credentials
   dsn: process.env.SENTRY_DSN || 'http://public_key@localhost:9999/1',
-  debug: true, // Output sentry operations to console (disable in production)
+  debug: process.env.NODE_ENV !== 'test', // Output sentry operations to console (disable in production/test)
   environment: process.env.NODE_ENV || 'development',
   integrations: [
     nodeProfilingIntegration(),
@@ -45,6 +45,18 @@ app.use(require('cookie-parser')());
 
 // Apply wallet-based rate limiting to all API routes
 app.use('/api', walletRateLimitMiddleware);
+
+// Import and apply vault pause middleware
+const { vaultPauseMiddleware, vaultStatusMiddleware } = require('./middleware/vaultPause.middleware');
+
+// Apply vault status middleware to all API routes
+app.use('/api', vaultStatusMiddleware);
+
+// Apply vault pause middleware to vault-specific endpoints
+app.use('/api/vaults', vaultPauseMiddleware);
+app.use('/api/claims', vaultPauseMiddleware);
+app.use('/api/user', vaultPauseMiddleware);
+app.use('/api/admin/vault', vaultPauseMiddleware);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
@@ -98,6 +110,7 @@ app.post('/api/admin/webhooks', async (req, res) => {
 const indexingService = require('./services/indexingService');
 const adminService = require('./services/adminService');
 const vestingService = require('./services/vestingService');
+const merkleVaultService = require('./services/merkleVaultService');
 const discordBotService = require('./services/discordBotService');
 const cacheService = require('./services/cacheService');
 const tvlService = require('./services/tvlService');
@@ -107,8 +120,10 @@ const notificationService = require('./services/notificationService');
 const pdfService = require('./services/pdfService');
 const ledgerSyncService = require('./services/ledgerSyncService');
 const multiSigRevocationService = require('./services/multiSigRevocationService');
+const VaultService = require('./services/vaultService');
 const monthlyReportJob = require('./jobs/monthlyReportJob');
 const { VaultReconciliationJob } = require('./jobs/vaultReconciliationJob');
+const vaultArchivalJob = require('./jobs/vaultArchivalJob');
 
 // Import webhooks routes
 const webhooksRoutes = require('./routes/webhooks');
@@ -266,16 +281,122 @@ app.use('/webhooks', webhooksRoutes);
 // Mount organization routes
 app.use('/api/org', organizationRoutes);
 
+// ── Vesting Routes ────────────────────────────────────────────────────────────
+
+// POST /api/vaults - Create a new vault
+app.post('/api/vaults', async (req, res) => {
+  try {
+    const vault = await vestingService.createVault(req.body);
+    res.status(201).json({ success: true, data: vault });
+  } catch (error) {
+    console.error('Error creating vault:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/vaults/:vaultAddress/top-up - Process a top-up
+app.post('/api/vaults/:vaultAddress/top-up', async (req, res) => {
+  try {
+    const { vaultAddress } = req.params;
+    const subSchedule = await vestingService.processTopUp({
+      vault_address: vaultAddress,
+      ...req.body,
+    });
+    res.status(201).json({ success: true, data: subSchedule });
+  } catch (error) {
+    console.error('Error processing top-up:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/vaults/:vaultAddress/schedule - Get vesting schedule
+app.get('/api/vaults/:vaultAddress/schedule', async (req, res) => {
+  try {
+    const { vaultAddress } = req.params;
+    const { beneficiaryAddress } = req.query;
+    const schedule = await vestingService.getVestingSchedule(vaultAddress, beneficiaryAddress);
+    res.json({ success: true, data: schedule });
+  } catch (error) {
+    console.error('Error fetching vesting schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/vaults/:vaultAddress/:beneficiaryAddress/withdrawable - Calculate withdrawable
+app.get('/api/vaults/:vaultAddress/:beneficiaryAddress/withdrawable', async (req, res) => {
+  try {
+    const { vaultAddress, beneficiaryAddress } = req.params;
+    const { timestamp } = req.query;
+    const result = await vestingService.calculateWithdrawableAmount(
+      vaultAddress,
+      beneficiaryAddress,
+      timestamp ? new Date(timestamp) : new Date()
+    );
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error calculating withdrawable amount:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/vaults/:vaultAddress/:beneficiaryAddress/withdraw - Process withdrawal
+app.post('/api/vaults/:vaultAddress/:beneficiaryAddress/withdraw', async (req, res) => {
+  try {
+    const { vaultAddress, beneficiaryAddress } = req.params;
+    const result = await vestingService.processWithdrawal({
+      vault_address: vaultAddress,
+      beneficiary_address: beneficiaryAddress,
+      ...req.body,
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error processing withdrawal:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/vaults/:vaultAddress/summary - Vault summary
+app.get('/api/vaults/:vaultAddress/summary', async (req, res) => {
+  try {
+    const { vaultAddress } = req.params;
+    const summary = await vestingService.getVaultSummary(vaultAddress);
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    console.error('Error fetching vault summary:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Merkle vesting airdrops (Issue #51)
+app.post('/api/merkle-vault/build-tree', async (req, res) => {
+  try {
+    const { entries } = req.body;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ success: false, error: 'entries array required' });
+    }
+    const data = merkleVaultService.buildMerkleVaultData(entries);
+    res.json({
+      success: true,
+      data: {
+        rootHash: data.rootHash,
+        totalAmount: data.totalAmount,
+        proofsByIndex: data.proofsByIndex,
+      },
+    });
+  } catch (error) {
+    console.error('Error building Merkle tree:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/claims', claimRateLimiter, async (req, res) => {
   try {
     const claim = await indexingService.processClaim(req.body);
     res.status(201).json({ success: true, data: claim });
   } catch (error) {
     console.error('Error processing claim:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -337,10 +458,6 @@ app.post('/api/admin/revoke', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error revoking access:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -356,7 +473,6 @@ app.post('/api/admin/create', async (req, res) => {
       success: false,
       error: error.message
     });
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -367,10 +483,6 @@ app.post('/api/admin/transfer', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error transferring vault:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -382,10 +494,6 @@ app.get('/api/admin/audit-logs', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error fetching audit logs:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -397,10 +505,6 @@ app.post('/api/admin/propose-new-admin', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error proposing new admin:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -412,10 +516,6 @@ app.post('/api/admin/accept-ownership', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error accepting ownership:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -427,10 +527,6 @@ app.post('/api/admin/transfer-ownership', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error transferring ownership:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -442,10 +538,6 @@ app.get('/api/admin/pending-transfers', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error fetching pending transfers:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -464,6 +556,61 @@ app.get('/api/stats/tvl', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching TVL stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delegate routes
+app.post('/api/delegate/set', async (req, res) => {
+  try {
+    const { vaultId, ownerAddress, delegateAddress } = req.body;
+    const { Vault } = require('./models');
+    const vault = await Vault.findOne({ where: { id: vaultId, owner_address: ownerAddress } });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or access denied' });
+    if (!delegateAddress || delegateAddress === 'invalid_address') return res.status(500).json({ success: false, error: 'Invalid delegate address' });
+    await vault.update({ delegate_address: delegateAddress });
+    res.json({ success: true, data: { message: 'Delegate set successfully', vault } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/delegate/claim', async (req, res) => {
+  try {
+    const { delegateAddress, vaultAddress, releaseAmount } = req.body;
+    const { Vault, SubSchedule } = require('./models');
+    const vault = await Vault.findOne({ where: { address: vaultAddress, delegate_address: delegateAddress } });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or delegate not authorized' });
+    
+    const amount = parseFloat(releaseAmount);
+    const subSchedule = await SubSchedule.findOne({ where: { vault_id: vault.id } });
+    
+    if (subSchedule && subSchedule.vesting_start_date && new Date() < new Date(subSchedule.vesting_start_date)) {
+       return res.status(500).json({ success: false, error: 'Insufficient releasable amount' });
+    }
+
+    if (subSchedule) {
+      const newReleased = (parseFloat(subSchedule.amount_released) || 0) + amount;
+      await subSchedule.update({ amount_released: String(newReleased) });
+    }
+
+    res.json({ success: true, data: { message: 'Tokens claimed successfully by delegate', releaseAmount, ownerAddress: vault.owner_address, delegateAddress } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/delegate/:vaultAddress/info', async (req, res) => {
+  try {
+    const { vaultAddress } = req.params;
+    const { Vault, SubSchedule, Beneficiary } = require('./models');
+    const vault = await Vault.findOne({ 
+      where: { address: vaultAddress },
+      include: [{ model: SubSchedule, as: 'subSchedules' }]
+    });
+    if (!vault) return res.status(500).json({ success: false, error: 'Vault not found or inactive' });
+    res.json({ success: true, data: { vault } });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -762,6 +909,33 @@ try {
     res.destroy(error);
   }
 }
+// Balance query endpoint
+app.get('/api/vaults/:id/balance', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vaultService = new VaultService();
+    
+    const balanceInfo = await vaultService.queryBalanceInfo(id);
+    
+    res.json({
+      success: true,
+      data: balanceInfo.toJSON()
+    });
+  } catch (error) {
+    console.error('Error querying vault balance:', error);
+    
+    if (error.message && error.message.includes('not found')) {
+      res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
 });
 
 // Vesting Agreement PDF endpoint
@@ -871,6 +1045,49 @@ app.get('/api/vault/:id/agreement.pdf', async (req, res) => {
           error: error.message
         });
       }
+  }
+});
+
+// Token distribution endpoint for pie chart data
+app.get('/api/token/:address/distribution', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { Vault } = require('./models');
+
+    // Get all vaults for this token address, grouped by tag
+    const distribution = await Vault.findAll({
+      attributes: [
+        'tag',
+        [sequelize.fn('SUM', sequelize.col('total_amount')), 'total_amount']
+      ],
+      where: {
+        token_address: address,
+        total_amount: {
+          [sequelize.Op.gt]: 0
+        }
+      },
+      group: ['tag'],
+      raw: true
+    });
+
+    // Format the response
+    const result = distribution
+      .filter(item => item.tag) // Filter out null tags
+      .map(item => ({
+        label: item.tag,
+        amount: parseFloat(item.total_amount)
+      }))
+      .sort((a, b) => b.amount - a.amount); // Sort by amount descending
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching token distribution:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
 
     // Sentry error handler must be before any other error middleware and after all controllers
@@ -951,6 +1168,95 @@ app.get('/api/vault/:id/agreement.pdf', async (req, res) => {
         } catch (notificationError) {
           console.error('Failed to initialize Notification Service:', notificationError);
           console.log('Continuing without notification cron job...');
+
+    // Start server
+    const startServer = async () => {
+      try {
+        await sequelize.authenticate();
+        console.log('Database connection established successfully.');
+
+        await sequelize.sync();
+        console.log('Database synchronized successfully.');
+
+        // Initialize Redis Cache
+        console.log('Database synchronized successfully.');
+
+        try {
+          await cacheService.connect();
+          if (cacheService.isReady()) {
+            console.log('Redis cache connected successfully.');
+          } else {
+            console.log('Redis cache not available, continuing without caching...');
+          }
+        } catch (cacheError) {
+          console.error('Failed to connect to Redis:', cacheError);
+          console.log('Continuing without Redis cache...');
+        }
+
+        // Initialize GraphQL Server
+        let graphQLServer = null;
+        try {
+          const { GraphQLServer } = require('./graphql/server');
+          graphQLServer = new GraphQLServer(app, httpServer);
+          await graphQLServer.start();
+          await graphQLServer.applyMiddleware(app);
+          console.log('GraphQL Server initialized successfully.');
+
+          const serverInfo = graphQLServer.getServerInfo();
+          console.log(`GraphQL Playground available at: ${serverInfo.playgroundUrl}`);
+          console.log(`GraphQL Subscriptions available at: ${serverInfo.subscriptionEndpoint}`);
+        } catch (graphqlError) {
+          console.error('Failed to initialize GraphQL Server:', graphqlError);
+          console.log('Continuing with REST API only...');
+        }
+
+        // Initialize Discord Bot
+        try {
+          await discordBotService.start();
+        } catch (discordError) {
+          console.error('Failed to initialize Discord Bot:', discordError);
+          console.log('Continuing without Discord bot...');
+        }
+    // Initialize Redis Cache
+
+        // Initialize Monthly Report Job
+        try {
+          monthlyReportJob.start();
+        } catch (jobError) {
+          console.error('Failed to initialize Monthly Report Job:', jobError);
+        }
+
+        // Initialize Vault Reconciliation Job
+        const vaultReconciliationJob = new VaultReconciliationJob();
+        try {
+          vaultReconciliationJob.start();
+          console.log('Vault Reconciliation Job started successfully.');
+        } catch (jobError) {
+          console.error('Failed to initialize Vault Reconciliation Job:', jobError);
+          console.log('Continuing without vault reconciliation...');
+        }
+
+        // Initialize Notification Service (includes cliff notification cron job)
+        try {
+          notificationService.start();
+          console.log('Notification service started successfully.');
+        } catch (notificationError) {
+          console.error('Failed to initialize Notification Service:', notificationError);
+          console.log('Continuing without notification cron job...');
+        }
+
+        // Initialize Ledger Sync Service - Critical for financial consistency
+        try {
+          await ledgerSyncService.loadPausedVaults();
+          ledgerSyncService.start();
+          console.log('🔍 Ledger Sync Service started - checking vault consistency every 60 seconds');
+        } catch (ledgerError) {
+          console.error('❌ Failed to initialize Ledger Sync Service:', ledgerError);
+          console.log('⚠️  WARNING: Ledger consistency checking is disabled - financial data may be inconsistent!');
+          Sentry.captureException(ledgerError, {
+            tags: { service: 'ledger-sync', severity: 'critical' },
+            extra: { impact: 'Financial consistency checking disabled' }
+          });
         }
 
         // Start the HTTP server
@@ -965,7 +1271,31 @@ app.get('/api/vault/:id/agreement.pdf', async (req, res) => {
       } catch (error) {
         console.error('Unable to start server:', error);
         process.exit(1);
+    // Initialize Vault Archival Job
+    try {
+      vaultArchivalJob.start();
+    } catch (jobError) {
+      console.error('Failed to initialize Vault Archival Job:', jobError);
+      console.log('Continuing without vault archival...');
+    }
+
+        });
+      } catch (error) {
+        console.error('Unable to start server:', error);
+        process.exit(1);
       }
     };
 
     startServer();
+    });
+  } catch (error) {
+    console.error('Unable to start server:', error);
+    process.exit(1);
+  }
+};
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

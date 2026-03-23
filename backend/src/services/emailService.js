@@ -1,10 +1,10 @@
-const nodemailer = require('nodemailer');
-const { Beneficiary } = require('../models');
+const nodemailer = require("nodemailer");
+const { Beneficiary } = require("../models");
 
 class EmailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.mailtrap.io',
+      host: process.env.EMAIL_HOST || "smtp.mailtrap.io",
       port: process.env.EMAIL_PORT || 2525,
       auth: {
         user: process.env.EMAIL_USER,
@@ -24,37 +24,41 @@ class EmailService {
   async sendEmail(to, subject, text, html) {
     try {
       if (!to) {
-        console.warn('No recipient email provided, skipping email notification');
+        console.warn(
+          "No recipient email provided, skipping email notification",
+        );
         return false;
       }
 
       // Check if email is marked as invalid (bounced)
       const beneficiary = await Beneficiary.findOne({
-        where: { email: to }
+        where: { email: require("../util/cryptoUtils").encryptEmail(to) },
       });
 
       if (beneficiary && !beneficiary.email_valid) {
-        console.warn(`Email ${to} is marked as invalid (bounced), skipping email notification`);
+        console.warn(
+          `Email ${to} is marked as invalid (bounced), skipping email notification`,
+        );
         return false;
       }
 
       if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        console.warn('Email credentials not set, skipping email notification');
+        console.warn("Email credentials not set, skipping email notification");
         return false;
       }
 
       const info = await this.transporter.sendMail({
-        from: `"Vesting Vault" <${process.env.EMAIL_FROM || 'no-reply@vestingvault.com'}>`,
+        from: `"Vesting Vault" <${process.env.EMAIL_FROM || "no-reply@vestingvault.com"}>`,
         to,
         subject,
         text,
         html,
       });
 
-      console.log('Email sent: %s', info.messageId);
+      console.log("Email sent: %s", info.messageId);
       return true;
     } catch (error) {
-      console.error('Error sending email:', error.message);
+      console.error("Error sending email:", error.message);
       return false;
     }
   }
@@ -66,7 +70,7 @@ class EmailService {
    * @returns {Promise<boolean>} Success status
    */
   async sendCliffPassedEmail(to, amount) {
-    const subject = 'Your Cliff has passed!';
+    const subject = "Your Cliff has passed!";
     const text = `Your Cliff has passed! You can now claim ${parseFloat(amount).toLocaleString()} tokens.`;
     const html = `<p>Your Cliff has passed! You can now claim <strong>${parseFloat(amount).toLocaleString()}</strong> tokens.</p>`;
 

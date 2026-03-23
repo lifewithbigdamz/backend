@@ -10,7 +10,8 @@
     "test:load": "node scripts/run-tge-load-test.js",
     "test:load:basic": "node scripts/run-tge-load-test.js basic",
     "test:load:comprehensive": "node scripts/run-tge-load-test.js comprehensive",
-    "test:load:quick": "node scripts/run-tge-load-test.js quick"
+    "test:load:quick": "node scripts/run-tge-load-test.js quick",
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "@apollo/server": "^5.4.0",
