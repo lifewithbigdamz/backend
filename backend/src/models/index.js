@@ -8,6 +8,12 @@ const Beneficiary = require('./beneficiary');
 const Organization = require('./organization');
 const Notification = require('./notification');
 const RefreshToken = require('./refreshToken');
+const RevocationProposal = require('./revocationProposal');
+const RevocationSignature = require('./revocationSignature');
+const MultiSigConfig = require('./multiSigConfig');
+const DividendRound = require('./dividendRound');
+const DividendDistribution = require('./dividendDistribution');
+const DividendSnapshot = require('./dividendSnapshot');
 const DeviceToken = require('./deviceToken');
 
 const { Token, initTokenModel } = require('./token');
@@ -27,13 +33,17 @@ const models = {
   Beneficiary,
   Organization,
   RefreshToken,
+  RevocationProposal,
+  RevocationSignature,
+  MultiSigConfig,
+  DividendRound,
+  DividendDistribution,
+  DividendSnapshot,
   Token,
   OrganizationWebhook,
-
   Notification,
   DeviceToken,
-  Token,
-  OrganizationWebhook,
+
   sequelize,
 };
 
