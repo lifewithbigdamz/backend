@@ -117,6 +117,7 @@ const tvlService = require('./services/tvlService');
 const vaultExportService = require('./services/vaultExportService');
 const authService = require('./services/authService');
 const notificationService = require('./services/notificationService');
+const liquidityMonitorService = require('./services/liquidityMonitorService');
 const pdfService = require('./services/pdfService');
 const ledgerSyncService = require('./services/ledgerSyncService');
 const multiSigRevocationService = require('./services/multiSigRevocationService');
@@ -1436,6 +1437,29 @@ app.get('/api/token/:address/distribution', async (req, res) => {
       console.log('Continuing without vault archival...');
     }
 
+    // Initialize Notification Service (includes cliff notification cron job)
+    try {
+      notificationService.start();
+      console.log('Notification service started successfully.');
+    } catch (notificationError) {
+      console.error('Failed to initialize Notification Service:', notificationError);
+      console.log('Continuing without notification cron job...');
+    }
+
+    try {
+      liquidityMonitorService.start();
+      console.log('Liquidity monitor service started successfully.');
+    } catch (liquidityMonitorError) {
+      console.error('Failed to initialize Liquidity Monitor Service:', liquidityMonitorError);
+      console.log('Continuing without liquidity monitor...');
+    }
+    
+    // Start the HTTP server
+    httpServer.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+      console.log(`REST API available at: http://localhost:${PORT}`);
+      if (graphQLServer) {
+        console.log(`GraphQL API available at: http://localhost:${PORT}/graphql`);
         });
       } catch (error) {
         console.error('Unable to start server:', error);

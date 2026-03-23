@@ -24,6 +24,7 @@ const DividendRound = require('./dividendRound');
 const DividendDistribution = require('./dividendDistribution');
 const DividendSnapshot = require('./dividendSnapshot');
 const DeviceToken = require('./deviceToken');
+const VaultLiquidityAlert = require('./vaultLiquidityAlert');
 
 
 
@@ -59,6 +60,9 @@ const models = {
 
   Organization,
   RefreshToken,
+  Notification,
+  DeviceToken,
+  VaultLiquidityAlert,
   RevocationProposal,
   RevocationSignature,
   MultiSigConfig,

@@ -76,6 +76,37 @@ class EmailService {
 
     return await this.sendEmail(to, subject, text, html);
   }
+
+  async sendLiquidityRiskAlertEmail(to, payload) {
+    const {
+      vaultName,
+      tokenSymbol,
+      orderUsd,
+      slippagePercent,
+      thresholdPercent,
+      insufficientDepth,
+    } = payload;
+
+    const depthSummary = insufficientDepth
+      ? `The order book could not fully absorb a $${orderUsd.toLocaleString()} sell order.`
+      : `Estimated slippage for a $${orderUsd.toLocaleString()} sell order is ${slippagePercent.toFixed(2)}%.`;
+
+    const subject = `Liquidity risk alert for ${tokenSymbol}`;
+    const text = [
+      `Liquidity risk alert for ${vaultName}.`,
+      depthSummary,
+      `Configured threshold: ${thresholdPercent.toFixed(2)}% slippage.`,
+      'Please review market-making or add liquidity before the next unlock window.',
+    ].join(' ');
+    const html = [
+      `<p><strong>Liquidity risk alert</strong> for ${vaultName}.</p>`,
+      `<p>${depthSummary}</p>`,
+      `<p>Configured threshold: <strong>${thresholdPercent.toFixed(2)}%</strong> slippage.</p>`,
+      `<p>Please review market-making or add liquidity before the next unlock window.</p>`,
+    ].join('');
+
+    return await this.sendEmail(to, subject, text, html);
+  }
 }
 
 module.exports = new EmailService();

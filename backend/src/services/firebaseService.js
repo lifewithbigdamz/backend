@@ -238,6 +238,29 @@ class FirebaseService {
 
     return await this.sendToMultipleDevices(deviceTokens, notification, data);
   }
+
+  async sendLiquidityRiskAlertNotification(deviceTokens, payload) {
+    const notification = {
+      title: 'Liquidity Risk Alert',
+      body: payload.insufficientDepth
+        ? `${payload.tokenSymbol} order book cannot absorb a $${payload.orderUsd.toLocaleString()} sell order`
+        : `${payload.tokenSymbol} sell slippage reached ${payload.slippagePercent.toFixed(2)}%`,
+    };
+
+    const data = {
+      type: 'LIQUIDITY_RISK_ALERT',
+      vaultAddress: payload.vaultAddress,
+      vaultName: payload.vaultName,
+      tokenSymbol: payload.tokenSymbol,
+      orderUsd: payload.orderUsd.toString(),
+      slippagePercent: payload.slippagePercent.toFixed(2),
+      thresholdPercent: payload.thresholdPercent.toFixed(2),
+      insufficientDepth: payload.insufficientDepth ? 'true' : 'false',
+      action: 'open_app',
+    };
+
+    return await this.sendToMultipleDevices(deviceTokens, notification, data);
+  }
 }
 
 module.exports = new FirebaseService();
