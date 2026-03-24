@@ -49,6 +49,12 @@ app.use('/api', walletRateLimitMiddleware);
 // Import and apply vault pause middleware
 const { vaultPauseMiddleware, vaultStatusMiddleware } = require('./middleware/vaultPause.middleware');
 
+// Import and apply Rule 144 compliance middleware
+const { 
+  rule144ComplianceMiddleware, 
+  recordClaimComplianceMiddleware 
+} = require('./middleware/rule144Compliance.middleware');
+
 // Apply vault status middleware to all API routes
 app.use('/api', vaultStatusMiddleware);
 
@@ -57,6 +63,9 @@ app.use('/api/vaults', vaultPauseMiddleware);
 app.use('/api/claims', vaultPauseMiddleware);
 app.use('/api/user', vaultPauseMiddleware);
 app.use('/api/admin/vault', vaultPauseMiddleware);
+
+// Apply Rule 144 compliance middleware to claim endpoints
+app.use('/api/claims', rule144ComplianceMiddleware);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
@@ -119,13 +128,10 @@ const authService = require('./services/authService');
 const notificationService = require('./services/notificationService');
 const liquidityMonitorService = require('./services/liquidityMonitorService');
 const pdfService = require('./services/pdfService');
-<<<<<<< feat/rwa-legal-document-hashing-service
 const legalDocumentHashingService = require('./services/legalDocumentHashingService');
-=======
 const ledgerSyncService = require('./services/ledgerSyncService');
 const multiSigRevocationService = require('./services/multiSigRevocationService');
 const dividendService = require('./services/dividendService');
->>>>>>> main
 const VaultService = require('./services/vaultService');
 const monthlyReportJob = require('./jobs/monthlyReportJob');
 const { VaultReconciliationJob } = require('./jobs/vaultReconciliationJob');
@@ -499,6 +505,10 @@ app.post('/api/merkle-vault/build-tree', async (req, res) => {
 app.post('/api/claims', claimRateLimiter, async (req, res) => {
   try {
     const claim = await indexingService.processClaim(req.body);
+    
+    // Apply recording middleware after successful claim
+    await recordClaimComplianceMiddleware(req, res, () => {});
+    
     res.status(201).json({ success: true, data: claim });
   } catch (error) {
     console.error('Error processing claim:', error);
@@ -509,6 +519,13 @@ app.post('/api/claims', claimRateLimiter, async (req, res) => {
 app.post('/api/claims/batch', claimRateLimiter, async (req, res) => {
   try {
     const result = await indexingService.processBatchClaims(req.body.claims);
+    
+    // Apply recording middleware for each claim in batch
+    for (const claim of req.body.claims) {
+      const mockReq = { body: claim, path: '/api/claims/batch' };
+      await recordClaimComplianceMiddleware(mockReq, res, () => {});
+    }
+    
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error processing batch claims:', error);
@@ -646,6 +663,107 @@ app.get('/api/admin/pending-transfers', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rule 144 Compliance Management API Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Get compliance status for a specific vault/user
+app.get('/api/compliance/rule144/:vaultId/:userAddress', async (req, res) => {
+  try {
+    const { vaultId, userAddress } = req.params;
+    const complianceCheck = await rule144ComplianceService.checkClaimCompliance(vaultId, userAddress);
+    res.json({ success: true, data: complianceCheck });
+  } catch (error) {
+    console.error('Error checking compliance status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get compliance status for all users in a vault (admin only)
+app.get('/api/compliance/rule144/vault/:vaultId', async (req, res) => {
+  try {
+    const { vaultId } = req.params;
+    const complianceStatus = await rule144ComplianceService.getVaultComplianceStatus(vaultId);
+    res.json({ success: true, data: complianceStatus });
+  } catch (error) {
+    console.error('Error getting vault compliance status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create compliance record (admin only)
+app.post('/api/compliance/rule144/create', async (req, res) => {
+  try {
+    const {
+      vaultId,
+      userAddress,
+      tokenAddress,
+      acquisitionDate,
+      holdingPeriodMonths = 6,
+      totalAmountAcquired = '0',
+      isRestrictedSecurity = true,
+      jurisdiction = 'US'
+    } = req.body;
+
+    const complianceRecord = await rule144ComplianceService.createComplianceRecord({
+      vaultId,
+      userAddress,
+      tokenAddress,
+      acquisitionDate,
+      holdingPeriodMonths,
+      totalAmountAcquired,
+      isRestrictedSecurity,
+      jurisdiction
+    });
+
+    res.status(201).json({ success: true, data: complianceRecord });
+  } catch (error) {
+    console.error('Error creating compliance record:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update compliance record (admin only)
+app.put('/api/compliance/rule144/:vaultId/:userAddress', async (req, res) => {
+  try {
+    const { vaultId, userAddress } = req.params;
+    const { verifiedBy, ...updates } = req.body;
+
+    if (!verifiedBy) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'verified_by is required for admin updates' 
+      });
+    }
+
+    const updatedRecord = await rule144ComplianceService.updateComplianceRecord(
+      vaultId,
+      userAddress,
+      updates,
+      verifiedBy
+    );
+
+    res.json({ success: true, data: updatedRecord });
+  } catch (error) {
+    console.error('Error updating compliance record:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get compliance statistics
+app.get('/api/compliance/rule144/statistics', async (req, res) => {
+  try {
+    const { vaultId } = req.query;
+    const statistics = await rule144ComplianceService.getComplianceStatistics(vaultId);
+    res.json({ success: true, data: statistics });
+  } catch (error) {
+    console.error('Error getting compliance statistics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/api/stats/tvl', async (req, res) => {
   try {
@@ -1170,8 +1288,26 @@ app.get('/api/vault/:id/agreement.pdf', async (req, res) => {
             success: false,
             error: 'tokenAddress, totalAmount, and dividendToken are required'
           });
-  }
-});
+        }
+
+        const result = await dividendService.createDividendRound({
+          tokenAddress,
+          totalAmount,
+          dividendToken,
+          vestedTreatment,
+          unvestedMultiplier,
+          createdBy
+        });
+
+        res.status(201).json({ success: true, data: result });
+      } catch (error) {
+        console.error('Error creating dividend round:', error);
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    });
 
 // Token distribution endpoint for pie chart data
 app.get('/api/token/:address/distribution', async (req, res) => {

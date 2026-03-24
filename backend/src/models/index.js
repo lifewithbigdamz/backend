@@ -24,13 +24,9 @@ const DividendRound = require('./dividendRound');
 const DividendDistribution = require('./dividendDistribution');
 const DividendSnapshot = require('./dividendSnapshot');
 const DeviceToken = require('./deviceToken');
-<<<<<<< feat/rwa-legal-document-hashing-service
 const VaultLegalDocument = require('./vaultLegalDocument');
-=======
 const VaultLiquidityAlert = require('./vaultLiquidityAlert');
-
-
->>>>>>> main
+const Rule144Compliance = require('./rule144Compliance');
 
 const { Token, initTokenModel } = require('./token');
 
@@ -66,28 +62,17 @@ const models = {
   RefreshToken,
   Notification,
   DeviceToken,
-<<<<<<< feat/rwa-legal-document-hashing-service
-  VaultLegalDocument,
-=======
+VaultLegalDocument,
   VaultLiquidityAlert,
+  Rule144Compliance,
   RevocationProposal,
   RevocationSignature,
   MultiSigConfig,
   DividendRound,
   DividendDistribution,
   DividendSnapshot,
->>>>>>> main
   Token,
   OrganizationWebhook,
-  Token,
-  OrganizationWebhook,
-
-
-
-  RefreshToken,
-  Notification,
-  DeviceToken,
-
   sequelize,
 
 };
