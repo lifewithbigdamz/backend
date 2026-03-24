@@ -82,7 +82,7 @@ const claimRateLimiter = rateLimit({
 
 const { sequelize } = require('./database/connection');
 const models = require('./models');
-const { OrganizationWebhook } = models;
+const { OrganizationWebhook, TaxJurisdiction, TaxCalculation } = models;
 // Register webhook URL for organization
 // For now, let's create a simple isAdminOfOrg function inline
 const isAdminOfOrg = async (adminAddress, orgId) => {
@@ -132,6 +132,8 @@ const legalDocumentHashingService = require('./services/legalDocumentHashingServ
 const ledgerSyncService = require('./services/ledgerSyncService');
 const multiSigRevocationService = require('./services/multiSigRevocationService');
 const dividendService = require('./services/dividendService');
+const taxCalculationService = require('./services/taxCalculationService');
+const taxOracleService = require('./services/taxOracleService');
 const VaultService = require('./services/vaultService');
 const monthlyReportJob = require('./jobs/monthlyReportJob');
 const { VaultReconciliationJob } = require('./jobs/vaultReconciliationJob');
@@ -759,6 +761,97 @@ app.get('/api/compliance/rule144/statistics', async (req, res) => {
     res.json({ success: true, data: statistics });
   } catch (error) {
     console.error('Error getting compliance statistics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Global Tax Withholding Calculation API Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Calculate tax liability for vesting event
+app.post('/api/tax/calculate/vesting', async (req, res) => {
+  try {
+    const {
+      vaultId,
+      userAddress,
+      jurisdiction,
+      taxYear,
+      vestingDate,
+      tokenPrice,
+      vestedAmount,
+      costBasis = '0',
+      holdingPeriodDays = 0,
+      incomeLevel,
+      filingStatus
+    } = req.body;
+
+    if (!vaultId || !userAddress || !jurisdiction || !taxYear || !vestingDate || !vestedAmount) {
+      return res.status(400).json({
+        success: false,
+        error: 'vaultId, userAddress, jurisdiction, taxYear, vestingDate, and vestedAmount are required'
+      });
+    }
+
+    const result = await taxCalculationService.calculateVestingTax({
+      vaultId,
+      userAddress,
+      jurisdiction,
+      taxYear,
+      vestingDate,
+      tokenPrice,
+      vestedAmount,
+      costBasis,
+      holdingPeriodDays,
+      incomeLevel,
+      filingStatus
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error calculating vesting tax:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get withholding estimate for user
+app.get('/api/tax/withholding/estimate/:userAddress', async (req, res) => {
+  try {
+    const { userAddress } = req.params;
+    const { jurisdiction, taxYear, vaultId } = req.query;
+
+    const estimate = await taxCalculationService.getWithholdingEstimate(userAddress, {
+      jurisdiction,
+      taxYear: taxYear ? parseInt(taxYear) : undefined,
+      vaultId
+    });
+
+    res.json({ success: true, data: estimate });
+  } catch (error) {
+    console.error('Error getting withholding estimate:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get user tax profile
+app.get('/api/tax/profile/:userAddress', async (req, res) => {
+  try {
+    const { userAddress } = req.params;
+    const profile = await taxCalculationService.getUserTaxProfile(userAddress);
+    res.json({ success: true, data: profile });
+  } catch (error) {
+    console.error('Error getting user tax profile:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get supported tax jurisdictions
+app.get('/api/tax/jurisdictions', async (req, res) => {
+  try {
+    const jurisdictions = await TaxJurisdiction.getAllActive();
+    res.json({ success: true, data: jurisdictions });
+  } catch (error) {
+    console.error('Error getting tax jurisdictions:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

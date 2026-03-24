@@ -27,6 +27,8 @@ const DeviceToken = require('./deviceToken');
 const VaultLegalDocument = require('./vaultLegalDocument');
 const VaultLiquidityAlert = require('./vaultLiquidityAlert');
 const Rule144Compliance = require('./rule144Compliance');
+const TaxCalculation = require('./taxCalculation');
+const TaxJurisdiction = require('./taxJurisdiction');
 
 const { Token, initTokenModel } = require('./token');
 
@@ -65,6 +67,8 @@ const models = {
 VaultLegalDocument,
   VaultLiquidityAlert,
   Rule144Compliance,
+  TaxCalculation,
+  TaxJurisdiction,
   RevocationProposal,
   RevocationSignature,
   MultiSigConfig,
