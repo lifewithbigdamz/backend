@@ -119,13 +119,10 @@ const authService = require('./services/authService');
 const notificationService = require('./services/notificationService');
 const liquidityMonitorService = require('./services/liquidityMonitorService');
 const pdfService = require('./services/pdfService');
-<<<<<<< feat/rwa-legal-document-hashing-service
 const legalDocumentHashingService = require('./services/legalDocumentHashingService');
-=======
 const ledgerSyncService = require('./services/ledgerSyncService');
 const multiSigRevocationService = require('./services/multiSigRevocationService');
 const dividendService = require('./services/dividendService');
->>>>>>> main
 const VaultService = require('./services/vaultService');
 const monthlyReportJob = require('./jobs/monthlyReportJob');
 const { VaultReconciliationJob } = require('./jobs/vaultReconciliationJob');
