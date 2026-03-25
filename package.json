@@ -1,0 +1,40 @@
+{
+  "name": "vesting-backend",
+  "version": "1.0.0",
+  "description": "API for Vesting Vault with Multi-Currency Path Payment Analytics",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@apollo/server": "^5.4.0",
+    "@nestjs/platform-socket.io": "^11.1.14",
+    "@nestjs/websockets": "^11.1.14",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "pg": "^8.11.3",
+    "mysql2": "^3.6.5",
+    "stellar-sdk": "^12.2.0",
+    "axios": "^1.6.2",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "**/*.js",
+      "!node_modules/**",
+      "!coverage/**"
+    ]
+  }
+}
