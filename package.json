@@ -5,20 +5,15 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "jest",
-    "migrate": "node database/migrate.js"
+
   },
   "dependencies": {
+    "@apollo/server": "^5.4.0",
+    "@nestjs/platform-socket.io": "^11.1.14",
+    "@nestjs/websockets": "^11.1.14",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "pg": "^8.11.3",
-    "crypto": "^1.0.1"
-  },
-  "devDependencies": {
-    "jest": "^29.7.0",
-    "nodemon": "^3.0.1",
-    "supertest": "^6.3.3"
+
   }
 }
