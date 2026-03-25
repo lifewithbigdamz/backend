@@ -1,14 +1,24 @@
 {
   "name": "vesting-backend",
   "version": "1.0.0",
-  "description": "API for Vesting Vault",
+  "description": "API for Vesting Vault - Multi-Language Legal Hash Storage",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest",
+    "migrate": "node database/migrate.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "pg": "^8.11.3",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.3"
   }
 }
