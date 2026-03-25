@@ -1,7 +1,7 @@
-const { AnnualVestingStatement, Vault, SubSchedule, ClaimsHistory, Token, Organization } = require('../models');
+const { AnnualVestingStatement, Vault, SubSchedule, ClaimsHistory, Token, Organization, Beneficiary } = require('../models');
 const { Op } = require('sequelize');
 const priceService = require('./priceService');
-const pdfService = require('./pdfService');
+const annualStatementPDFService = require('./annualStatementPDFService');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -85,23 +85,33 @@ class AnnualVestingStatementService {
    * @returns {Promise<Array>} Array of vaults with related data
    */
   async getUserVaults(userAddress) {
-    return await Vault.findAll({
-      where: { /* TODO: Add user filter condition based on your schema */ },
+    // Get vaults through beneficiary relationship
+    const beneficiaries = await Beneficiary.findAll({
+      where: { address: userAddress },
       include: [
         {
-          model: SubSchedule,
-          as: 'subSchedules',
-        },
-        {
-          model: Token,
-          as: 'token',
-        },
-        {
-          model: Organization,
-          as: 'organization',
+          model: Vault,
+          as: 'vault',
+          include: [
+            {
+              model: SubSchedule,
+              as: 'subSchedules',
+            },
+            {
+              model: Token,
+              as: 'token',
+            },
+            {
+              model: Organization,
+              as: 'organization',
+            },
+          ],
         },
       ],
     });
+
+    // Extract vaults from beneficiaries
+    return beneficiaries.map(beneficiary => beneficiary.vault);
   }
 
   /**
@@ -186,7 +196,6 @@ class AnnualVestingStatementService {
     // Get claims for this vault within the year
     const claims = await ClaimsHistory.findAll({
       where: {
-        user_address: /* TODO: user address from vault relationship */ null,
         token_address: vault.token_address,
         claim_timestamp: {
           [Op.between]: [startDate, endDate],
