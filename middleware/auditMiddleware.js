@@ -36,7 +36,9 @@ class AuditMiddleware {
                             userAgent: req.get('User-Agent'),
                             ip: req.ip,
                             statusCode: res.statusCode,
-                            timestamp: new Date().toISOString()
+                            timestamp: new Date().toISOString(),
+                            userRole: req.user?.role || 'anonymous',
+                            userId: req.user?.id || 'anonymous'
                         };
 
                         await this.auditService.logAdminAction(

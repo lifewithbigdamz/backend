@@ -2,7 +2,7 @@ name: Vesting API Tests
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "develop", "feature/*" ]
   pull_request:
     branches: [ "main", "develop" ]
 
@@ -37,8 +37,11 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
         
-      - name: Run tests
+      - name: Run unit tests
         run: npm test
+        
+      - name: Run RBAC tests specifically
+        run: npm test -- --testPathPattern=rbac
         
       - name: Generate coverage report
         run: npm run test:coverage
@@ -50,6 +53,57 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
+
+  rbac-security-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Create environment file
+        run: cp .env.example .env
+        
+      - name: Create data directory
+        run: mkdir -p data
+        
+      - name: Start application in background
+        run: |
+          npm start &
+          sleep 10
+        
+      - name: Test RBAC endpoints
+        run: |
+          # Test token generation for all roles
+          curl -X POST http://localhost:3000/api/auth/token/generate \
+            -H "Content-Type: application/json" \
+            -d '{"id":"test-super","email":"super@test.com","role":"super_admin"}' \
+            || exit 1
+            
+          curl -X POST http://localhost:3000/api/auth/token/generate \
+            -H "Content-Type: application/json" \
+            -d '{"id":"test-finance","email":"finance@test.com","role":"finance_manager"}' \
+            || exit 1
+            
+          curl -X POST http://localhost:3000/api/auth/token/generate \
+            -H "Content-Type: application/json" \
+            -d '{"id":"test-hr","email":"hr@test.com","role":"hr_manager"}' \
+            || exit 1
+            
+          curl -X POST http://localhost:3000/api/auth/token/generate \
+            -H "Content-Type: application/json" \
+            -d '{"id":"test-auditor","email":"auditor@test.com","role":"read_only_auditor"}' \
+            || exit 1
+        
+      - name: Cleanup
+        run: pkill -f "node index.js" || true
 
   security-audit:
     runs-on: ubuntu-latest

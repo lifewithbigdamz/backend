@@ -16,11 +16,17 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const auditRoutes = require('./routes/audit');
+const authRoutes = require('./routes/auth');
 const auditMiddleware = require('./middleware/auditMiddleware');
+const authMiddleware = require('./middleware/authMiddleware');
 
-app.use('/api/audit', auditRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/audit', authMiddleware.authenticateToken, authMiddleware.validateUserClaims, authMiddleware.requireEndpointAccess(), auditRoutes);
 
 app.post('/api/vesting/cliff-date', 
+    authMiddleware.authenticateToken,
+    authMiddleware.validateUserClaims,
+    authMiddleware.requireEndpointAccess(),
     auditMiddleware.auditCliffDateChanges(),
     (req, res) => {
         res.json({ 
@@ -32,6 +38,9 @@ app.post('/api/vesting/cliff-date',
 );
 
 app.post('/api/vesting/beneficiary', 
+    authMiddleware.authenticateToken,
+    authMiddleware.validateUserClaims,
+    authMiddleware.requireEndpointAccess(),
     auditMiddleware.auditBeneficiaryChanges(),
     (req, res) => {
         res.json({ 
@@ -43,6 +52,9 @@ app.post('/api/vesting/beneficiary',
 );
 
 app.post('/api/admin/action', 
+    authMiddleware.authenticateToken,
+    authMiddleware.validateUserClaims,
+    authMiddleware.requireEndpointAccess(),
     auditMiddleware.auditAdminActions(),
     (req, res) => {
         res.json({ 
@@ -62,9 +74,18 @@ app.get('/', (req, res) => {
             'Tamper-proof audit logging',
             'Cryptographic chain integrity',
             'Stellar ledger anchoring',
-            'Event sourcing architecture'
+            'Event sourcing architecture',
+            'Role-Based Access Control (RBAC)',
+            'JWT authentication',
+            'Granular permissions'
         ],
         endpoints: {
+            auth: '/api/auth',
+            'auth-token': '/api/auth/token/generate',
+            'auth-verify': '/api/auth/token/verify',
+            'auth-roles': '/api/auth/roles',
+            'auth-permissions': '/api/auth/permissions/:role',
+            'auth-test': '/api/auth/test-access',
             audit: '/api/audit',
             verification: '/api/audit/verify',
             history: '/api/audit/history',
@@ -72,6 +93,12 @@ app.get('/', (req, res) => {
             'stellar-account': '/api/audit/stellar/account',
             'chain-integrity': '/api/audit/chain-integrity',
             'daily-hashes': '/api/audit/daily-hashes'
+        },
+        rbac: {
+            'super_admin': 'Full system control',
+            'finance_manager': 'Withdrawal/Revenue operations',
+            'hr_manager': 'Onboarding/Metadata management',
+            'read_only_auditor': 'Read-only audit access'
         }
     });
 });
