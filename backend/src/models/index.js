@@ -17,6 +17,7 @@ const DividendSnapshot = require("./dividendSnapshot");
 const DeviceToken = require("./deviceToken");
 const VaultLegalDocument = require("./vaultLegalDocument");
 const VaultLiquidityAlert = require("./vaultLiquidityAlert");
+const AnnualVestingStatement = require("./annualVestingStatement");
 const VestingMilestone = require("./vestingMilestone");
 const HistoricalTokenPrice = require("./historicalTokenPrice");
 const CostBasisReport = require("./costBasisReport");
@@ -54,9 +55,7 @@ const models = {
   HistoricalTokenPrice,
   CostBasisReport,
   AuditorToken,
-  DeviceToken,
-  VaultLegalDocument,
-  VaultLiquidityAlert,
+  AnnualVestingStatement,
   Token,
   OrganizationWebhook,
   sequelize,
