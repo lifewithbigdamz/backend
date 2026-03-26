@@ -113,10 +113,10 @@ const AnnualVestingStatement = sequelize.define('AnnualVestingStatement', {
 
 // Add association method
 AnnualVestingStatement.associate = function (models) {
-  AnnualVestingStatement.belongsTo(models.User, {
+  AnnualVestingStatement.belongsTo(models.Beneficiary, {
     foreignKey: 'user_address',
     sourceKey: 'address',
-    as: 'user'
+    as: 'beneficiary'
   });
 };
 
