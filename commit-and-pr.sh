@@ -1,6 +1,11 @@
 #!/bin/bash
 
-echo "🚀 Committing Issue #16 - Portfolio View Aggregation"
+BRANCH_NAME="feat/portfolio-aggregation-16"
+
+echo "🚀 Setting up branch and committing Issue #16"
+
+# Create and switch to the new branch
+git checkout -b $BRANCH_NAME
 
 # Add all changes
 git add .
@@ -16,12 +21,12 @@ git commit -m "feat: Implement portfolio aggregation endpoint
 
 Fixes #16"
 
-echo "✅ Changes committed successfully!"
-echo "📋 Ready to create Pull Request"
+echo " Pushing to origin..."
+git push origin $BRANCH_NAME
+
+echo "✅ Changes committed and pushed successfully!"
+echo "📋 You can now create the Pull Request on GitHub."
 echo ""
-echo "🌟 Next steps:"
-echo "1. Push to your fork: git push origin main"
-echo "2. Create PR on GitHub"
-echo "3. Link PR to Issue #16"
+echo "🔗 Link: https://github.com/Vesting-Vault/backend/compare/main...$BRANCH_NAME"
 echo ""
 echo "🎊 Issue #16 Implementation Complete!"

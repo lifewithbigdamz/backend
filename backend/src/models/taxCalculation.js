@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../database/connection');
+const BigNumber = require('bignumber.js');
 
 /**
  * TaxCalculation Model

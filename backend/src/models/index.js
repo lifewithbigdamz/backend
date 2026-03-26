@@ -23,6 +23,15 @@ const HistoricalTokenPrice = require("./historicalTokenPrice");
 const CostBasisReport = require("./costBasisReport");
 const AuditorToken = require("./auditorToken");
 const VaultRegistry = require("./vaultRegistry");
+const Rule144Compliance = require("./rule144Compliance");
+const TaxCalculation = require("./taxCalculation");
+const TaxJurisdiction = require("./taxJurisdiction");
+const KycStatus = require("./kycStatus");
+const KycNotification = require("./kycNotification");
+const ContractUpgradeProposal = require("./contractUpgradeProposal");
+const ContractUpgradeSignature = require("./contractUpgradeSignature");
+const ContractUpgradeAuditLog = require("./contractUpgradeAuditLog");
+const CertifiedBuild = require("./certifiedBuild");
 
 const { Token, initTokenModel } = require("./token");
 const {
@@ -65,6 +74,10 @@ const models = {
   Token,
   OrganizationWebhook,
   VaultRegistry,
+  ContractUpgradeProposal,
+  ContractUpgradeSignature,
+  ContractUpgradeAuditLog,
+  CertifiedBuild,
   sequelize,
 };
 

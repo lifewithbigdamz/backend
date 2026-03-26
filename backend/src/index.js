@@ -145,6 +145,7 @@ const legalDocumentHashingService = require("./services/legalDocumentHashingServ
 const ledgerSyncService = require("./services/ledgerSyncService");
 const multiSigRevocationService = require("./services/multiSigRevocationService");
 const dividendService = require("./services/dividendService");
+const accountConsolidationService = require("./services/accountConsolidationService");
 const VaultService = require("./services/vaultService");
 const monthlyReportJob = require("./jobs/monthlyReportJob");
 const { VaultReconciliationJob } = require("./jobs/vaultReconciliationJob");
@@ -160,6 +161,7 @@ const hsmRoutes = require("./routes/hsm");
 const historicalPriceRoutes = require("./routes/historicalPriceRoutes");
 const auditorRoutes = require("./routes/auditor");
 const vaultRegistryRoutes = require("./routes/vaultRegistry");
+const contractUpgradeRoutes = require("./routes/contractUpgrade");
 
 app.get("/", (req, res) => {
   res.json({ message: "Vesting Vault API is running!" });
@@ -323,6 +325,9 @@ app.use("/api/auditor", auditorRoutes);
 
 // Mount vault registry routes (ecosystem-wide vault discovery)
 app.use("/api/registry", vaultRegistryRoutes);
+
+// Mount contract upgrade routes (proxy-style upgrade functionality)
+app.use("/api/contract-upgrade", contractUpgradeRoutes);
 
 // Historical price tracking job management endpoints
 app.post("/api/admin/jobs/historical-prices/start", async (req, res) => {
@@ -1907,6 +1912,107 @@ app.get(
     }
   },
 );
+
+// ── Account Consolidation Routes ──────────────────────────────────────────────────
+// Issue #134 #77: Account Merging and Schedule Consolidation
+
+// GET /api/user/:address/consolidated - Get consolidated view for beneficiary
+app.get("/api/user/:address/consolidated", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const {
+      organizationId,
+      tokenAddress,
+      vaultAddresses,
+      asOfDate
+    } = req.query;
+
+    // Parse array parameters
+    let parsedVaultAddresses = null;
+    if (vaultAddresses) {
+      try {
+        parsedVaultAddresses = Array.isArray(vaultAddresses) 
+          ? vaultAddresses 
+          : JSON.parse(vaultAddresses);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          error: "vaultAddresses must be a valid JSON array"
+        });
+      }
+    }
+
+    // Parse date parameter
+    let parsedAsOfDate = null;
+    if (asOfDate) {
+      parsedAsOfDate = new Date(asOfDate);
+      if (isNaN(parsedAsOfDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: "asOfDate must be a valid ISO date"
+        });
+      }
+    }
+
+    const consolidatedView = await accountConsolidationService.getConsolidatedView(address, {
+      organizationId,
+      tokenAddress,
+      vaultAddresses: parsedVaultAddresses,
+      asOfDate: parsedAsOfDate
+    });
+
+    res.json({
+      success: true,
+      data: consolidatedView
+    });
+  } catch (error) {
+    console.error("Error getting consolidated view:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// POST /api/admin/consolidate-accounts - Merge beneficiary addresses
+app.post("/api/admin/consolidate-accounts", async (req, res) => {
+  try {
+    const { primaryAddress, addressesToMerge, adminAddress } = req.body;
+
+    if (!primaryAddress || !addressesToMerge || !adminAddress) {
+      return res.status(400).json({
+        success: false,
+        error: "primaryAddress, addressesToMerge, and adminAddress are required"
+      });
+    }
+
+    if (!Array.isArray(addressesToMerge) || addressesToMerge.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "addressesToMerge must be a non-empty array"
+      });
+    }
+
+    const mergeResult = await accountConsolidationService.mergeBeneficiaryAddresses(
+      primaryAddress,
+      addressesToMerge,
+      adminAddress
+    );
+
+    res.json({
+      success: true,
+      data: mergeResult
+    });
+  } catch (error) {
+    console.error("Error consolidating accounts:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Sentry error handler must be before any other error middleware and after all controllers
 if (process.env.SENTRY_DSN && Sentry.Handlers) {
