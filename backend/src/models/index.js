@@ -22,6 +22,11 @@ const VestingMilestone = require("./vestingMilestone");
 const HistoricalTokenPrice = require("./historicalTokenPrice");
 const CostBasisReport = require("./costBasisReport");
 const AuditorToken = require("./auditorToken");
+const Rule144Compliance = require("./rule144Compliance");
+const TaxCalculation = require("./taxCalculation");
+const TaxJurisdiction = require("./taxJurisdiction");
+const KycStatus = require("./kycStatus");
+const KycNotification = require("./kycNotification");
 
 const { Token, initTokenModel } = require("./token");
 const {

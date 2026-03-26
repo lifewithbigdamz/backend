@@ -30,7 +30,92 @@ The API documentation is available through Swagger UI at:
 #### 4. Portfolio Endpoints
 - `GET /api/user/{address}/portfolio` - Get user portfolio
 
-#### 5. GraphQL Endpoint
+#### 5. Account Consolidation Endpoints (Issue #134 #77)
+- `GET /api/user/{address}/consolidated` - Get consolidated vesting view for beneficiary
+- `POST /api/admin/consolidate-accounts` - Merge beneficiary addresses
+
+**Account Consolidation Details:**
+
+##### Get Consolidated View
+```http
+GET /api/user/{address}/consolidated?organizationId={orgId}&tokenAddress={tokenAddr}&vaultAddresses={array}&asOfDate={date}
+```
+
+**Query Parameters:**
+- `organizationId` (optional): Filter by specific organization ID
+- `tokenAddress` (optional): Filter by specific token address  
+- `vaultAddresses` (optional): JSON array of vault addresses to include
+- `asOfDate` (optional): Calculate as of specific ISO date (default: now)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "beneficiary_address": "0x...",
+    "as_of_date": "2024-01-01T00:00:00.000Z",
+    "total_vaults": 3,
+    "total_allocated": "1500.00",
+    "total_withdrawn": "300.00", 
+    "total_withdrawable": "200.00",
+    "total_vested": "500.00",
+    "weighted_average_cliff_date": "2024-06-01T00:00:00.000Z",
+    "weighted_average_end_date": "2025-06-01T00:00:00.000Z",
+    "average_vesting_duration_seconds": 31536000,
+    "vaults": [
+      {
+        "vault_address": "0x...",
+        "vault_name": "Team Vesting",
+        "token_address": "0x...",
+        "allocated": "500.00",
+        "withdrawn": "100.00",
+        "withdrawable": "50.00",
+        "vested": "150.00",
+        "cliff_date": "2024-06-01T00:00:00.000Z",
+        "end_date": "2025-06-01T00:00:00.000Z",
+        "vesting_duration_seconds": 31536000,
+        "sub_schedules_count": 2,
+        "tag": "Team"
+      }
+    ],
+    "consolidation_summary": {
+      "original_vesting_tracks": 8,
+      "consolidated_tracks": 3,
+      "consolidation_efficiency": 63
+    }
+  }
+}
+```
+
+##### Merge Beneficiary Addresses
+```http
+POST /api/admin/consolidate-accounts
+```
+
+**Body:**
+```json
+{
+  "primaryAddress": "0x...",
+  "addressesToMerge": ["0x...", "0x..."],
+  "adminAddress": "0x..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "primary_address": "0x...",
+    "merged_addresses": ["0x...", "0x..."],
+    "vaults_updated": 5,
+    "total_allocation_transferred": "1000.00",
+    "total_withdrawal_transferred": "250.00"
+  }
+}
+```
+
+#### 6. GraphQL Endpoint
 - `GET/POST /graphql` - GraphQL Playground and API endpoint
 
 ### Authentication
