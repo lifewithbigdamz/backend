@@ -32,6 +32,7 @@ const ContractUpgradeProposal = require("./contractUpgradeProposal");
 const ContractUpgradeSignature = require("./contractUpgradeSignature");
 const ContractUpgradeAuditLog = require("./contractUpgradeAuditLog");
 const CertifiedBuild = require("./certifiedBuild");
+const ConversionEvent = require("./conversionEvent");
 
 const { Token, initTokenModel } = require("./token");
 const {
@@ -78,6 +79,7 @@ const models = {
   ContractUpgradeSignature,
   ContractUpgradeAuditLog,
   CertifiedBuild,
+  ConversionEvent,
   sequelize,
 };
 
